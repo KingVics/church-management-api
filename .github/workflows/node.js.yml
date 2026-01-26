@@ -1,0 +1,43 @@
+name: Node.js CI/CD
+
+on:
+  push:
+    branches: ['main']
+  pull_request:
+    branches: ['main']
+
+jobs:
+  build:
+    runs-on: self-hosted
+
+    strategy:
+      matrix:
+        node-version: [22.x]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'pnpm'
+
+      - name: Install dependencies with pnpm
+        run: |
+          rm -rf node_modules
+          pnpm install
+          pnpm rebuild bcrypt
+
+      - name: Create environment file
+        run: |
+          touch .env
+          echo "${{ secrets.SERVER_ENV }}" > .env
+
+      - name: Restart server with PM2
+        run: |
+          cd /home/ubuntu/actions-runner/_work/Server/Server
+          pm2 stop server || true
+          pm2 delete server || true
+          pm2 start index.js --name "server"
+          pm2 save

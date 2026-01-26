@@ -1,0 +1,73 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "version": "1.0.0",
+    "title": "RPP Church",
+    "description": "Test"
+  },
+  "host": "localhost:5000",
+  "basePath": "/api/v1",
+  "schemes": [
+    "http",
+    "https"
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/auth/login": {
+      "post": {
+        "summary": "Login for admin users",
+        "tags": [
+          "Admin"
+        ],
+        "description": "Login admin into the system",
+        "parameters": [
+          {
+            "name": "phone",
+            "in": "body",
+            "description": "phone number of admin",
+            "schema": {
+              "$ref": "#/definitions/Admin"
+            }
+          }
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Login Success",
+            "schema": {
+              "$ref": "#/definitions/Admin"
+            }
+          },
+          "401": {
+            "description": "Login details are not valid!!"
+          },
+          "404": {
+            "description": "Email is not registered!"
+          },
+          "500": {
+            "description": "User login failed!!"
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "Admin": {
+      "properties": {
+        "phone": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
