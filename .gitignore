@@ -1,3 +1,15 @@
+# Dependencies
+node_modules
+
+# Build output
+dist
+dist-ssr
+
+# Environment files
+.env
+.env.*
+*.local
+
 # Logs
 logs
 *.log
@@ -7,12 +19,17 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
+# Uploads / media
+uploads
+public/uploads
+storage
 
-# Editor directories and files
+# Firebase / service credentials
+firebase-adminsdk*.json
+*-adminsdk-*.json
+*.secret.json
+
+# Editor & OS files
 .vscode/*
 !.vscode/extensions.json
 .idea
@@ -22,7 +39,3 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-.env
-
-firebase-adminsdk-fbsvc-7d3ce0a628.json
-firebase-adminsdk.json
