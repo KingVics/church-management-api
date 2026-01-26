@@ -177,4 +177,11 @@ Improve member care and follow-up
 
 Provide a free and open tool for ministry use
 
-## EN
+
+## Setup
+
+git clone https://github.com/KingVics/church-management-api.git
+cd church-management-api
+pnpm install 
+cp .env.example .env
+pnpm start
