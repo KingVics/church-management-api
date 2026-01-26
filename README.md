@@ -176,3 +176,5 @@ Reduce administrative burden in churches
 Improve member care and follow-up
 
 Provide a free and open tool for ministry use
+
+## EN
