@@ -22,12 +22,10 @@ oAuth2Client.setCredentials({
  */
 const getYouTubeClientWithRetry = async () => {
   try {
-    console.log('🔄 Attempting to refresh access token...');
     const { credentials } = await oAuth2Client.refreshAccessToken();
 
     oAuth2Client.setCredentials(credentials);
 
-    console.log('✅ Token refreshed. Returning authenticated client.');
     return google.youtube({
       version: 'v3',
       auth: oAuth2Client,
@@ -36,15 +34,11 @@ const getYouTubeClientWithRetry = async () => {
     const message = error.response?.data?.error || error.message;
 
     if (message === 'invalid_grant') {
-      console.error(
-        '❌ Refresh token is expired or revoked. Manual re-auth needed.'
-      );
       throw new Error(
         'Refresh token invalid or revoked. Please re-authenticate via the OAuth flow.'
       );
     }
 
-    console.error('🔴 Token refresh failed:', message);
     throw new Error('Failed to refresh access token. ' + message);
   }
 };

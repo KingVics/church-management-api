@@ -22,9 +22,9 @@ const AwsS3 = async ({ image, file, folder, type: types }) => {
         types && types?.includes('audio') // Decode Base64 string to binary buffer
           ? new Buffer.from(base64Img, 'base64')
           : new Buffer.from(
-              base64Img.replace(/^data:image\/\w+;base64,/, ''),
-              'base64'
-            );
+            base64Img.replace(/^data:image\/\w+;base64,/, ''),
+            'base64'
+          );
 
       const type = base64Img.split(';')[0].split('/')[1];
 
@@ -42,7 +42,6 @@ const AwsS3 = async ({ image, file, folder, type: types }) => {
         throw new BadRequestError(`S3 upload error: ${err.message}`);
       }
     } else {
-      console.log('else');
     }
   }
 };
@@ -67,9 +66,8 @@ const AwsFindObject = async ({ Key, Bucket, folder }) => {
     };
     await s3.getObject(params).promise();
 
-    return `https://${Bucket}.s3${'.eu-north-1'}.amazonaws.com${
-      folder ? `${folder}/` : '/'
-    }${params.Key}`;
+    return `https://${Bucket}.s3${'.eu-north-1'}.amazonaws.com${folder ? `${folder}/` : '/'
+      }${params.Key}`;
   } catch (err) {
     throw new BadRequestError(`S3 upload error: ${err.message}`);
   }

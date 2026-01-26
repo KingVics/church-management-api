@@ -53,7 +53,6 @@ const CaptureAttendance = async (req, res) => {
       `${findMember.firstName} already marked present for this activity`
     );
   } else if (checkAttendance?.length <= 0) {
-    console.log(req.user.name, 'req.user.name');
     const attendance = {
       date: activity.date,
       serviceName: activity.serviceName,

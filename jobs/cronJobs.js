@@ -11,7 +11,6 @@ var path = require('path');
 const { default: mongoose } = require('mongoose');
 
 const generateWeeklyCallReport = async () => {
-  console.log('called');
   const startOfWeek = moment()
     .subtract(1, 'weeks')
     .day(0)
@@ -19,7 +18,6 @@ const generateWeeklyCallReport = async () => {
     .toDate();
   const endOfWeek = moment().subtract(1, 'weeks').day(6).endOf('day').toDate();
 
-  console.log(startOfWeek, endOfWeek);
 
   const callLogs = await CallLogsModel.aggregate([
     {
@@ -37,12 +35,12 @@ const generateWeeklyCallReport = async () => {
         },
         pendingCalls: {
           $sum: { $cond: [{ $eq: ['$status', 'Pending'] }, 1, 0] },
-        }, // New Pending Calls
+        },
       },
     },
     {
       $lookup: {
-        from: 'members', // Assuming 'members' is the collection for admins
+        from: 'members', 
         localField: '_id',
         foreignField: '_id',
         as: 'admin',
@@ -56,12 +54,11 @@ const generateWeeklyCallReport = async () => {
         totalCalls: 1,
         completedCalls: 1,
         failedCalls: 1,
-        pendingCalls: 1, // Include pending calls in final output
+        pendingCalls: 1, 
       },
     },
   ]);
 
-  console.log(callLogs);
 
   if (!callLogs.length) {
     return;
@@ -102,101 +99,16 @@ const generateWeeklyCallReport = async () => {
   };
   try {
     await SendEmail({ msg });
-    console.log('Weekly report sent successfully.');
   } catch (error) {
     console.error('❌ Failed to send email:', error.message);
   }
-  console.log('Weekly report sent successfully.');
 };
 
-// const AutoGenerateLog = async (overrideLogs = false) => {
-//   const type = 'Absent';
 
-//   // Get the latest activity
-//   const activity = await ActivitiesModel.findOne().sort({ createdAt: -1 });
-
-//   //activity date is in this format MM/DD/YYYY
-//   //SO find every activity in the member records of attendance that falls within the MM/YYYY
-
-//   if (!activity || !activity._id) {
-//     throw new NotFoundError(`No activity found`);
-//   }
-
-//   let queryObject = { serviceId: activity._id, attendance: type };
-
-//   // Check if call logs already exist for this activity
-//   const existingLogs = await CallLogsModel.find({ activityId: activity._id });
-//   if (existingLogs.length > 0) {
-//     if (overrideLogs === true) {
-//       await CallLogsModel.deleteMany({ activityId: activity._id });
-//     } else {
-//       return existingLogs;
-//     }
-//   }
-
-//   // Get SYSTEM permission
-//   const perm = await Permission.findOne({ name: 'SYSTEM' });
-
-//   if (!perm) {
-//     throw new NotFoundError('SYSTEM permission not found');
-//   }
-
-//   // Find admins with SYSTEM permission and call_report access
-//   const admins = await MembersModel.find({
-//     permission: {
-//       $elemMatch: {
-//         permId: new mongoose.Types.ObjectId(perm._id),
-//         permissions: {
-//           $elemMatch: { name: 'call_report' },
-//         },
-//       },
-//     },
-//   });
-
-//   if (!admins.length) {
-//     throw new NotFoundError('No admins found with call_report permissions');
-//   }
-
-//   // Find absent members who have phone records
-//   const absentMembers = await MembersModel.find({
-//     attendance: { $elemMatch: queryObject },
-//     phone: { $exists: true, $ne: null }, // Ensures only members with phone numbers are included
-//   });
-
-//   if (!absentMembers.length) {
-//     return;
-//   }
-
-//   // Distribute absent members to admins
-//   let callLogs = [];
-//   absentMembers.forEach((member, index) => {
-//     const assignedAdmin = admins[index % admins.length]; // Distribute evenly
-
-//     callLogs.push({
-//       adminId: assignedAdmin._id,
-//       memberId: member._id,
-//       activityId: activity._id,
-//       status: 'Pending', // Can be updated when call is made
-//       assignedDate: new Date(),
-//       phone: member.phone,
-//       adminName: assignedAdmin.firstName + ' ' + assignedAdmin.lastName,
-//       memberName: member.firstName + ' ' + member.lastName,
-//       absentDate: activity.date,
-//       gender: member.gender
-//     });
-//   });
-
-//   // Save new logs
-//   await CallLogsModel.insertMany(callLogs);
-
-//   console.log('New call logs created successfully');
-//   return callLogs;
-// };
 
 const AutoGenerateLog = async (overrideLogs = false) => {
   const type = 'Absent';
 
-  // Get the latest activity
   const activity = await ActivitiesModel.findOne().sort({ createdAt: -1 });
 
   if (!activity || !activity._id) {
@@ -210,15 +122,7 @@ const AutoGenerateLog = async (overrideLogs = false) => {
 
   // Check if call logs already exist for this activity
   // const existingLogs = await CallLogsModel.find({});
-  // if (existingLogs.length > 0) {
   await CallLogsModel.deleteMany({});
-
-  // if (overrideLogs === true) {
-  //   await CallLogsModel.deleteMany({ activityId: activity._id });
-  // } else {
-  //   return existingLogs;
-  // }
-  // }
 
   // Get SYSTEM permission
   const perm = await Permission.findOne({ name: 'SYSTEM' });
@@ -245,14 +149,13 @@ const AutoGenerateLog = async (overrideLogs = false) => {
 
   // Query all members who have at least one 'Absent' record (without filtering month/year yet)
   const allAbsentMembers = await MembersModel.find({
-    attendance: { $elemMatch: { attendance: type, serviceId: activity._id } }, // Ensure there's at least one absence
+    attendance: { $elemMatch: { attendance: type, serviceId: activity._id } }, 
     phone: { $exists: true, $ne: null }, // Only include members with phone numbers
   });
 
   // Filter members and count absences in MM/YYYY with activity details
   const absentMembers = allAbsentMembers
     .map((member) => {
-      // Filter attendance records for the same MM/YYYY
       const absencesInMonth = member.attendance.filter((att) => {
         const attDate = new Date(att.date);
         return (
@@ -264,16 +167,16 @@ const AutoGenerateLog = async (overrideLogs = false) => {
 
       return absencesInMonth.length > 0
         ? {
-            ...member.toObject(),
-            absenceCount: absencesInMonth.length, // Count how many times absent in the month
-            absentActivities: absencesInMonth.map((att) => ({
-              date: att.date,
-              serviceName: att.serviceName,
-            })), // Store activity details
-          }
+          ...member.toObject(),
+          absenceCount: absencesInMonth.length,
+          absentActivities: absencesInMonth.map((att) => ({
+            date: att.date,
+            serviceName: att.serviceName,
+          })),
+        }
         : null;
     })
-    .filter(Boolean); // Remove members with no absences in the given MM/YYYY
+    .filter(Boolean);
 
   if (!absentMembers.length) {
     return;
@@ -282,29 +185,27 @@ const AutoGenerateLog = async (overrideLogs = false) => {
   // Distribute absent members to admins
   let callLogs = [];
   absentMembers.forEach((member, index) => {
-    const assignedAdmin = admins[index % admins.length]; // Distribute evenly
+    const assignedAdmin = admins[index % admins.length];
 
     callLogs.push({
       adminId: assignedAdmin._id,
       memberId: member._id,
       activityId: activity._id,
-      status: 'Pending', // Can be updated when call is made
+      status: 'Pending',
       assignedDate: new Date(),
       phone: member.phone,
       adminName: assignedAdmin.firstName + ' ' + assignedAdmin.lastName,
       memberName: member.firstName + ' ' + member.lastName,
       absentDate: activity.date,
-      absenceCount: member.absenceCount, // Add the count of absences in the month
-      absentActivities: member.absentActivities, // Add the list of absent activities
+      absenceCount: member.absenceCount,
+      absentActivities: member.absentActivities,
       gender: member.gender,
       membershipType: member.membershipType,
     });
   });
 
-  // Save new logs
   await CallLogsModel.insertMany(callLogs);
 
-  console.log(callLogs, 'New call logs created successfully');
   return callLogs;
 };
 
@@ -320,7 +221,6 @@ const AutoUpdateMember = async ({ todayDay }) => {
 
   const activity = await ActivitiesModel.findOne({ date: searchDate });
   if (!activity?._id) return;
-  //! if no activity found, stop the job? return or send a mail
   if (activity?._id) {
     let queryObject = { serviceId: activity._id };
 
@@ -352,7 +252,6 @@ const AutoUpdateMember = async ({ todayDay }) => {
         );
         attachment = fs.readFileSync(pathToAttachment).toString('base64');
         var dir = './report';
-        console.log('report');
         const msg = {
           from: {
             email: '',
@@ -370,7 +269,7 @@ const AutoUpdateMember = async ({ todayDay }) => {
               },
             },
           ],
-          templateId: 'd-cfd316f4138a47e9b7d7bc4f6448d355',
+          templateId: process.env.ATTENDANCE_REPORT_TEMPLATE_ID,
           attachments: [
             {
               content: attachment,
@@ -382,7 +281,6 @@ const AutoUpdateMember = async ({ todayDay }) => {
         };
 
         await SendEmail({ msg }).then((res) => {
-          console.log('here');
           if (fs.existsSync(dir)) {
             fs.rmSync(dir, { recursive: true, force: true });
           }
