@@ -9,6 +9,7 @@ const fs = require('fs');
 var path = require('path');
 const toTitleCase = require('../middleware/toLower');
 const { AwsS3 } = require('../middleware/awsUpload');
+const { triggerFirstTimerWelcome } = require('../middleware/firstTimerHook');
 
 const GetASingleMember = async (req, res) => {
   const { id } = req.params;
@@ -147,6 +148,10 @@ const CreateUser = async (req, res) => {
     membershipType,
     joinedDate,
     dateOfBirth,
+    firstTimer,
+    firstVisitDate,
+    whatsappOptIn,
+    whatsappOptInDate,
   } = req.body;
 
   if (email || phone) {
@@ -184,6 +189,10 @@ const CreateUser = async (req, res) => {
     membershipType,
     joinedDate,
     dateOfBirth: dateOfBirth,
+    firstTimer,
+    firstVisitDate,
+    whatsappOptIn,
+    whatsappOptInDate,
     memberId: Id,
     // ? `${day.toString()?.padStart(2, '0')}-${month
     //     .toString()
@@ -209,11 +218,13 @@ const CreateUser = async (req, res) => {
           attendance: 'Absent',
         }));
         doc.attendance = allActivities;
-        doc.save();
+        await doc.save();
+        await triggerFirstTimerWelcome(doc);
         res
           .status(StatusCodes.CREATED)
           .json({ mesage: `${doc.firstName} created`, record: doc });
       } else {
+        await triggerFirstTimerWelcome(doc);
         res
           .status(StatusCodes.CREATED)
           .json({
