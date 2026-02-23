@@ -1,187 +1,120 @@
-## Church Management System – Backend API
+# Church Management API
 
-An open-source backend API built to help churches manage members, attendance, services, departments, follow-ups, and reports.
+Backend API for church operations: members, attendance, departments, reports, follow-up, and WhatsApp automation via WAHA.
 
-This project was designed for small to medium churches but is flexible enough to scale.
+## Core Features
 
-## ✨ Features
+- Member management
+- Attendance tracking
+- Department management
+- Call and follow-up workflows
+- Role and permission based access
+- Reports and exports
+- WhatsApp automation (WAHA)
 
+## Tech Stack
 
-## 👥 Member Management
+- Node.js
+- Express.js
+- MongoDB + Mongoose
+- JWT auth
+- node-cron
 
-Member onboarding and registration
+## Local Setup
 
-Profile picture upload
-
-Member notes (pastoral notes, observations, follow-ups)
-
-Archive members (soft delete / inactive members)
-
-Department assignment
-
-## ✅ Attendance Management
-
-Manual attendance marking
-
-Automated attendance support (NFC / QR ready)
-
-Attendance per service
-
-Present and absent tracking
-
-## ⏱️ Services & Programs
-
-Create and manage church services (e.g. Sunday Service, Midweek Service)
-
-Track attendance per service
-
-Service schedules
-
-## 🧾 Reports
-
-Download attendance reports
-
-Service-based attendance summaries
-
-Member participation reports
-
-## 🗣️ Testimony Management
-
-Text testimonies
-
-Voice testimonies (audio upload and storage)
-
-Admin moderation support (optional)
-
-## 📞 Call & Follow-Up Management
-
-Automatically generates absentee list after each service
-
-Assigns absent members to admins or workers responsible for follow-up
-
-Tracks follow-up responsibility
-
-## 🔔 Automated Cron Jobs
-
-Runs after every service
-
-Generates:
-
-Present members list
-
-Absent members list
-
-Triggers follow-up workflows
-
-## 🧑‍💼 Admin & Access Control
-
-Admin creation and management
-
-Role-based access control (RBAC)
-
-Permission-based authorization
-
-Fine-grained module access
-
-## 📺 Live Streaming
-
-Schedule live streaming services
-
-“Watch Live” configuration support
-
-Streaming metadata management
-
-## 🏢 Department Management
-
-Create and manage church departments
-
-Assign members to departments
-
-Department-based reporting
-
-## 🧱 Tech Stack
-
-Runtime: Node.js
-
-Framework: Express.js
-
-Database: MongoDB (Mongoose)
-
-Authentication: JWT
-
-File Uploads: Multipart / Cloud storage ready
-
-Scheduler: Cron jobs
-
-📁 Project Structure
-
-## 🔐 Authentication & Authorization
-
-JWT-based authentication
-
-Role-based access control
-
-Permission checks per module
-
-Admin-only routes protected via middleware
-
-## 🛡️ Data Privacy & Responsibility
-
-This system stores personal member data.
-
-Administrators are responsible for:
-
-Securing the database
-
-Restricting admin access
-
-Complying with local data protection regulations
-
-Proper handling of uploaded media (images, audio)
-
-## ⚠️ Disclaimer
-
-This software is provided “as is”, without warranty of any kind.
-
-The authors are not responsible for:
-
-Data loss
-
-Misuse of member information
-
-Legal compliance issues
-
-## 🤝 Contributing
-
-Contributions are welcome.
-
-Fork the repository
-
-Create a feature branch
-
-Submit a pull request
-
-For major changes, please open an issue first.
-
-## 📄 License
-
-MIT License
-
-## 🙏 Purpose
-
-This project exists to:
-
-Reduce administrative burden in churches
-
-Improve member care and follow-up
-
-Provide a free and open tool for ministry use
-
-
-## Setup
-
+```bash
 git clone https://github.com/KingVics/church-management-api.git
 cd church-management-api
-pnpm install 
+pnpm install
 cp .env.example .env
 pnpm start
+```
+
+Swagger UI:
+
+- `http://localhost:5000/doc`
+
+## WAHA WhatsApp Integration
+
+WAHA docs:
+
+- https://waha.devlike.pro/docs/overview/quick-start/
+
+### 1. Start WAHA Docker
+
+```bash
+docker run -d \
+  --name waha \
+  -p 3000:3000 \
+  -e WAHA_API_KEY=your-secret-key \
+  devlikeapro/waha
+```
+
+If WAHA runs on another host port, use that port in `WAHA_API_URL`.
+
+### 2. Add WhatsApp Environment Variables
+
+Add to `.env`:
+
+```env
+WAHA_API_URL=http://localhost:3000
+WAHA_API_KEY=your-secret-key
+WAHA_SESSION=default
+WEBHOOK_BASE_URL=https://your-domain.com/api/v1/whatsapp/webhook
+
+CHURCH_NAME=Victory Chapel
+WHATSAPP_COMMUNITY_LINK=https://chat.whatsapp.com/your-group-link
+SERVICE_TIME=9:00 AM
+```
+
+### 3. Start and Manage WAHA Session from This API
+
+All endpoints below are exposed by this backend under `/api/v1/whatsapp`.
+
+- Start session (create if missing, then start): `POST /api/v1/whatsapp/session/start`
+- Get QR code payload: `GET /api/v1/whatsapp/session/qr`
+- Check session status: `GET /api/v1/whatsapp/session-status`
+- Stop session: `POST /api/v1/whatsapp/session/stop`
+- Restart session: `POST /api/v1/whatsapp/session/restart`
+- Logout session: `POST /api/v1/whatsapp/session/logout`
+
+After calling `session/start`, call `session/qr`, scan with your WhatsApp app, then verify with `session-status`.
+
+### 4. Webhook
+
+Set WAHA webhook URL to:
+
+- `https://your-domain.com/api/v1/whatsapp/webhook`
+
+Local example:
+
+- `http://localhost:5000/api/v1/whatsapp/webhook`
+
+### 5. WhatsApp Business Flows Exposed by API
+
+- Welcome first-timer: `POST /api/v1/whatsapp/welcome/:memberId`
+- Sunday reminder: `POST /api/v1/whatsapp/broadcast/sunday-reminder`
+- Event broadcast: `POST /api/v1/whatsapp/broadcast/event`
+- Emergency broadcast: `POST /api/v1/whatsapp/broadcast/emergency`
+- Custom broadcast: `POST /api/v1/whatsapp/broadcast/custom`
+- Manual message: `POST /api/v1/whatsapp/send/:memberId`
+- Absent reminders: `POST /api/v1/whatsapp/send-absent-reminders`
+- Consent update: `PATCH /api/v1/whatsapp/consent/:memberId`
+
+History and analytics:
+
+- `GET /api/v1/whatsapp/broadcast-history`
+- `GET /api/v1/whatsapp/broadcast-history/:broadcastId`
+- `GET /api/v1/whatsapp/activity/:memberId`
+- `GET /api/v1/whatsapp/journey/:memberId`
+- `GET /api/v1/whatsapp/journeys`
+
+### 6. Test Manually in Swagger
+
+1. Open `http://localhost:5000/doc`.
+2. Authorize with your Bearer JWT.
+3. Use the `WhatsApp` tagged endpoints.
+
+## License
+
+MIT

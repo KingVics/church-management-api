@@ -20,8 +20,10 @@ const streamRoute = require('./route/stream');
 const testimonyRoute = require('./route/testimony');
 const notificationRoute = require('./route/notification');
 const { scheduleCheckAgentTransaction } = require('./jobs/cronJobs.js');
+const { registerWhatsAppCronJobs } = require('./jobs/whatsappCronJobs.js');
 const swaggerUI = require('swagger-ui-express');
 const callLogRoute = require('./route/callLog');
+const whatsappRoute = require('./route/whatsappRoutes');
 const app = express();
 
 //Error handler
@@ -101,6 +103,7 @@ app.use('/api/v1/stream', auth, streamRoute);
 app.use('/api/v1/testimony', testimonyRoute);
 app.use('/api/v1/calls', auth, callLogRoute);
 app.use('/api/v1/notification', notificationRoute);
+app.use('/api/v1/whatsapp', whatsappRoute);
 
 //Middleware
 app.use(notFoundMiddleware);
@@ -115,6 +118,7 @@ const start = async () => {
     app.listen(port, async () => {
       await connectDb(process.env.MONGO_URI);
       scheduleCheckAgentTransaction();
+      registerWhatsAppCronJobs();
       console.log('App is listening on' + ' ' + port);
     });
     // swaggerDocs(app, port);
