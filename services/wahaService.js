@@ -174,8 +174,10 @@ class WahaService {
 
   async createSession(webhookUrl, sessionName = this.session) {
     try {
-      const payload = { name: sessionName };
+      console.log(webhookUrl, 'webhookurl3');
+      let payload = { name: sessionName };
       if (webhookUrl) {
+        console.log(webhookUrl, 'webhookurl4');
         payload.config = {
           webhooks: [{ url: webhookUrl, events: ['message', 'message.ack'] }],
         };
@@ -209,6 +211,7 @@ class WahaService {
     webhookUrl = null,
     retries = 3,
   } = {}) {
+    console.log(webhookUrl, 'webhookurl2');
     // 1) Try create (idempotent in our wrapper).
     const created = await this.createSession(webhookUrl, sessionName);
     if (!created.success) {
@@ -260,6 +263,7 @@ class WahaService {
     sessionName = this.session,
     webhookUrl = null,
   } = {}) {
+    console.log(webhookUrl, 'webhookurl');
     // 1) Check WAHA node health.
     const serverStatus = await this.getServerStatus();
     if (!serverStatus.success) {
