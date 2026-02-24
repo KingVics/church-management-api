@@ -217,6 +217,7 @@ const logoutSession = async (req, res) => {
 
 const handleWebhook = async (req, res) => {
   try {
+    console.log("[Webhook] Received payload:", JSON.stringify(req.body));
     const messages = extractWebhookMessages(req.body || {});
     const results = [];
 
