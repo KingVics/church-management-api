@@ -78,35 +78,59 @@ const normalizeWebhookMessage = (msg = {}) => {
   return { from, body: String(body || '').trim(), fromMe };
 };
 
+// const extractWebhookMessages = (body = {}) => {
+//   const event = body?.event || body?.type || '';
+//   const payload = body?.payload ?? body?.data ?? body;
+
+//   if (String(event).startsWith('message.ack')) return [];
+
+//   const candidates = [];
+//   if (Array.isArray(payload?.messages)) candidates.push(...payload.messages);
+//   if (Array.isArray(payload)) candidates.push(...payload);
+//   if (payload?.message) candidates.push(payload.message);
+//   if (payload?.body || payload?.text || payload?.from || payload?.fromNumber) {
+//     candidates.push(payload);
+//   }
+//   if (body?.message) candidates.push(body.message);
+//   if (body?.body || body?.text || body?.from || body?.fromNumber) candidates.push(body);
+
+//   const unique = new Set();
+//   const normalized = [];
+//   for (const c of candidates) {
+//     const msg = normalizeWebhookMessage(c);
+//     const key = `${msg.from}|${msg.body}|${msg.fromMe}`;
+//     if (!msg.from || !msg.body || msg.fromMe) continue;
+//     if (unique.has(key)) continue;
+//     unique.add(key);
+//     normalized.push(msg);
+//   }
+//   return normalized;
+// };
+
+
 const extractWebhookMessages = (body = {}) => {
-  const event = body?.event || body?.type || '';
-  const payload = body?.payload ?? body?.data ?? body;
+  if (body?.event !== 'message') return [];
 
-  if (String(event).startsWith('message.ack')) return [];
+  const payload = body.payload;
+  if (!payload) return [];
 
-  const candidates = [];
-  if (Array.isArray(payload?.messages)) candidates.push(...payload.messages);
-  if (Array.isArray(payload)) candidates.push(...payload);
-  if (payload?.message) candidates.push(payload.message);
-  if (payload?.body || payload?.text || payload?.from || payload?.fromNumber) {
-    candidates.push(payload);
-  }
-  if (body?.message) candidates.push(body.message);
-  if (body?.body || body?.text || body?.from || body?.fromNumber) candidates.push(body);
+  // Ignore messages sent by the bot
+  if (payload.fromMe) return [];
 
-  const unique = new Set();
-  const normalized = [];
-  for (const c of candidates) {
-    const msg = normalizeWebhookMessage(c);
-    const key = `${msg.from}|${msg.body}|${msg.fromMe}`;
-    if (!msg.from || !msg.body || msg.fromMe) continue;
-    if (unique.has(key)) continue;
-    unique.add(key);
-    normalized.push(msg);
-  }
-  return normalized;
+  // Ignore group messages
+  if (!payload.from?.endsWith('@c.us')) return [];
+
+  // Ignore empty/system messages
+  if (!payload.body || payload.body.trim() === '') return [];
+
+  return [
+    {
+      from: payload.from,
+      body: payload.body.trim(),
+      fromMe: false,
+    },
+  ];
 };
-
 const startSession = async (req, res) => {
   try {
     const webhookUrl = req.body?.webhookUrl || process.env.WEBHOOK_BASE_URL || null;
@@ -221,8 +245,12 @@ const handleWebhook = async (req, res) => {
     const messages = extractWebhookMessages(req.body || {});
     const results = [];
 
+    console.log(`[Webhook] Extracted ${messages.length} message(s) from payload.`);
+
     for (const msg of messages) {
       const result = await followUpService.handleReply(msg.from, msg.body);
+
+      console.log(result, 'result from handleReply');
       results.push({
         from: msg.from,
         action: result?.action || 'ignored',
