@@ -357,7 +357,7 @@ class FollowUpService {
 
         if (contact?.number) {
           const full = contact.number;
-          return full.startsWith('234') ? full.slice(3) : full;
+          return full.startsWith('234') ? '0' + full.slice(3) : full;
         }
 
         return null;
@@ -582,135 +582,140 @@ class FollowUpService {
   }
 
   async handleReply(phone, messageBody) {
-    console.log(`Handling reply from ${phone}: ${messageBody}`);
     const cleanedPhone = await this._resolveRealPhoneFromJid(phone)
     console.log(`Cleaned phone: ${cleanedPhone}`);
     const reply = this._normalizeInboundText(messageBody);
 
-    // const memberByPhone = await MembersModel.findOne({
-    //   phone: { $regex: cleanedPhone },
-    // });
-    return {}
+    const memberByPhone = await MembersModel.findOne({
+      phone: { $regex: cleanedPhone },
+    });
+
+    console.log(`Member found by phone: ${memberByPhone}`);
 
     // // Global commands should work even when there is no active journey.
-    // if (this._isOptOut(reply) && memberByPhone) {
-    //   memberByPhone.whatsappOptIn = false;
-    //   memberByPhone.whatsappOptOutDate = new Date();
-    //   await memberByPhone.save();
+    if (this._isOptOut(reply) && memberByPhone) {
+      memberByPhone.whatsappOptIn = false;
+      memberByPhone.whatsappOptOutDate = new Date();
+      await memberByPhone.save();
 
-    //   await FollowUpJourney.updateMany(
-    //     { memberId: memberByPhone._id, status: { $in: ['active', 'escalated'] } },
-    //     { $set: { status: 'opted_out', nextMessageAt: null } }
-    //   );
+      await FollowUpJourney.updateMany(
+        { memberId: memberByPhone._id, status: { $in: ['active', 'escalated'] } },
+        { $set: { status: 'opted_out', nextMessageAt: null } }
+      );
 
-    //   await wahaService.sendText(
-    //     cleanedPhone,
-    //     'You have been unsubscribed from WhatsApp follow-up messages. Reply START to opt in again.'
-    //   );
+      await wahaService.sendText(
+        cleanedPhone,
+        'You have been unsubscribed from WhatsApp follow-up messages. Reply START to opt in again.'
+      );
 
-    //   return { action: 'opted_out', journey: null };
-    // }
+      return { action: 'opted_out', journey: null };
+    }
 
-    // if (this._isOptIn(reply) && memberByPhone) {
-    //   memberByPhone.whatsappOptIn = true;
-    //   memberByPhone.whatsappOptInDate = new Date();
-    //   memberByPhone.whatsappOptOutDate = null;
-    //   await memberByPhone.save();
+    console.log(`Opt-out check done. Proceeding with reply handling.`);
 
-    //   await wahaService.sendText(
-    //     cleanedPhone,
-    //     'You are now subscribed again. Thank you.'
-    //   );
-    //   return { action: 'opted_in', journey: null };
-    // }
+    if (this._isOptIn(reply) && memberByPhone) {
+      memberByPhone.whatsappOptIn = true;
+      memberByPhone.whatsappOptInDate = new Date();
+      memberByPhone.whatsappOptOutDate = null;
+      await memberByPhone.save();
 
-    // if (this._isHelp(reply)) {
-    //   await wahaService.sendText(
-    //     cleanedPhone,
-    //     'Reply 1, 2, or 3 to choose an option. Reply STOP to opt out, START to opt in.'
-    //   );
-    //   return { action: 'help', journey: null };
-    // }
+      await wahaService.sendText(
+        cleanedPhone,
+        'You are now subscribed again. Thank you.'
+      );
+      return { action: 'opted_in', journey: null };
+    }
+    console.log(`Opt-in check done. Proceeding with help check.`);
 
-    // const journey = await FollowUpJourney.findOne({
-    //   phone: { $regex: cleanedPhone },
-    //   status: { $in: ['active', 'escalated'] },
-    // }).populate('memberId');
+    if (this._isHelp(reply)) {
+      await wahaService.sendText(
+        cleanedPhone,
+        'Reply 1, 2, or 3 to choose an option. Reply STOP to opt out, START to opt in.'
+      );
+      return { action: 'help', journey: null };
+    }
+    
 
-    // if (!journey) {
-    //   if (memberByPhone) {
-    //     const absentHandled = await this._handleAbsentReminderReply(
-    //       memberByPhone,
-    //       cleanedPhone,
-    //       reply
-    //     );
-    //     if (absentHandled) return { action: absentHandled.action, journey: null };
-    //   }
-    //   return null;
-    // }
+    const journey = await FollowUpJourney.findOne({
+      phone: { $regex: cleanedPhone },
+      status: { $in: ['active', 'escalated'] },
+    }).populate('memberId');
 
-    // const member = journey.memberId;
-    // const firstName = member?.firstName || 'Friend';
-    // const flowStages = await this.getActiveFlowStages();
-    // const stageConfig = this._findStageConfig(flowStages, journey.currentStage);
+    console.log(`Active journey found: ${!!journey}`);
+    if (!journey) {
+      if (memberByPhone) {
+        const absentHandled = await this._handleAbsentReminderReply(
+          memberByPhone,
+          cleanedPhone,
+          reply
+        );
+        if (absentHandled) return { action: absentHandled.action, journey: null };
+      }
+      return null;
+    }
 
-    // await WhatsappActivity.create({
-    //   memberId: member?._id,
-    //   phone: cleanedPhone,
-    //   direction: 'inbound',
-    //   messageType: 'reply',
-    //   content: reply,
-    //   followUpStage: journey.currentStage,
-    //   conversationStage: 'awaiting_reply',
-    //   status: 'read',
-    // });
+    const member = journey.memberId;
+    const firstName = member?.firstName || 'Friend';
+    const flowStages = await this.getActiveFlowStages();
+    const stageConfig = this._findStageConfig(flowStages, journey.currentStage);
 
-    // let action = 'unknown';
-    // const configuredOption = this._findConfiguredResponseOption(
-    //   reply,
-    //   stageConfig?.responseOptions || []
-    // );
+    await WhatsappActivity.create({
+      memberId: member?._id,
+      phone: cleanedPhone,
+      direction: 'inbound',
+      messageType: 'reply',
+      content: reply,
+      followUpStage: journey.currentStage,
+      conversationStage: 'awaiting_reply',
+      status: 'read',
+    });
 
-    // if (configuredOption) {
-    //   action = await this._applyConfiguredResponseOption({
-    //     option: configuredOption,
-    //     journey,
-    //     member,
-    //     phone: cleanedPhone,
-    //   });
-    // } else {
-    //   const option = this._detectOption(reply, journey.currentStage);
-    //   if (option === 1) action = await this._handleOption1(journey, firstName, cleanedPhone);
-    //   else if (option === 2) action = await this._handleOption2(journey, firstName, cleanedPhone);
-    //   else if (option === 3) action = await this._handleOption3(journey, firstName, cleanedPhone);
-    //   else if (
-    //     journey.currentStage === 2 ||
-    //     member?.whatsappConversationStage === 'prayer_requested'
-    //   ) {
-    //     await this._handlePrayerRequest(member, cleanedPhone, reply);
-    //     action = 'prayer_submitted';
-    //   } else {
-    //     action = 'free_text';
-    //   }
-    // }
+    let action = 'unknown';
+    const configuredOption = this._findConfiguredResponseOption(
+      reply,
+      stageConfig?.responseOptions || []
+    );
 
-    // journey.replies.push({
-    //   content: reply,
-    //   receivedAt: new Date(),
-    //   stage: journey.currentStage,
-    //   action,
-    // });
-    // journey.engagementScore = this._calculateEngagement(journey);
-    // await journey.save();
+    if (configuredOption) {
+      action = await this._applyConfiguredResponseOption({
+        option: configuredOption,
+        journey,
+        member,
+        phone: cleanedPhone,
+      });
+    } else {
+      const option = this._detectOption(reply, journey.currentStage);
+      if (option === 1) action = await this._handleOption1(journey, firstName, cleanedPhone);
+      else if (option === 2) action = await this._handleOption2(journey, firstName, cleanedPhone);
+      else if (option === 3) action = await this._handleOption3(journey, firstName, cleanedPhone);
+      else if (
+        journey.currentStage === 2 ||
+        member?.whatsappConversationStage === 'prayer_requested'
+      ) {
+        await this._handlePrayerRequest(member, cleanedPhone, reply);
+        action = 'prayer_submitted';
+      } else {
+        action = 'free_text';
+      }
+    }
 
-    // if (member) {
-    //   member.lastWhatsappReply = new Date();
-    //   member.totalReplies = (member.totalReplies || 0) + 1;
-    //   member.whatsappEngagementStatus = 'active';
-    //   await member.save();
-    // }
+    journey.replies.push({
+      content: reply,
+      receivedAt: new Date(),
+      stage: journey.currentStage,
+      action,
+    });
+    journey.engagementScore = this._calculateEngagement(journey);
+    await journey.save();
 
-    // return { action, journey };
+    if (member) {
+      member.lastWhatsappReply = new Date();
+      member.totalReplies = (member.totalReplies || 0) + 1;
+      member.whatsappEngagementStatus = 'active';
+      await member.save();
+    }
+
+    return { action, journey };
   }
 
   async _handleOption1(journey, firstName, phone) {
