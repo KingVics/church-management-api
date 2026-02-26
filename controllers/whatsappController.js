@@ -118,7 +118,7 @@ const extractWebhookMessages = (body = {}) => {
   if (payload.fromMe) return [];
 
   // Ignore group messages
-  if (!payload.from?.endsWith('@c.us')) return [];
+  if (payload.from?.endsWith('@g.us')) return [];
 
   // Ignore empty/system messages
   if (!payload.body || payload.body.trim() === '') return [];
@@ -245,6 +245,7 @@ const handleWebhook = async (req, res) => {
     const messages = extractWebhookMessages(req.body || {});
     const results = [];
 
+    console.log(messages, 'messages extracted from payload');
     console.log(`[Webhook] Extracted ${messages.length} message(s) from payload.`);
 
     for (const msg of messages) {
