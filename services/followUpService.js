@@ -346,9 +346,12 @@ class FollowUpService {
             params: {
               contactId: jid,
               session: 'default'
+            },
+            headers: {
+              'X-Api-Key': process.env.WAHA_API_KEY
             }
           }
-        );
+        );;
 
         const contact = response.data;
 
