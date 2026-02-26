@@ -657,25 +657,27 @@ class FollowUpService {
       return null;
     }
 
+    console.log(lastOutbound, 'last outbound activity awaiting reply');
+
     // Handle absent reminder outside journey
     if (lastOutbound.messageType === 'absent_reminder') {
-      const result = await this._handleAbsentReminderReply(
-        memberByPhone,
-        cleanedPhone,
-        reply
-      );
+      // const result = await this._handleAbsentReminderReply(
+      //   memberByPhone,
+      //   cleanedPhone,
+      //   reply
+      // );
 
-      await WhatsappActivity.findOneAndUpdate(
-        {
-          _id: lastOutbound._id,
-          conversationStage: 'awaiting_reply'
-        },
-        {
-          $set: { conversationStage: 'completed' }
-        }
-      );
+      // await WhatsappActivity.findOneAndUpdate(
+      //   {
+      //     _id: lastOutbound._id,
+      //     conversationStage: 'awaiting_reply'
+      //   },
+      //   {
+      //     $set: { conversationStage: 'completed' }
+      //   }
+      // );
 
-      return result ? { action: result.action } : null;
+      // return result ? { action: result.action } : null;
     }
 
     // console.log(`Active journey found: ${!!journey}`);
