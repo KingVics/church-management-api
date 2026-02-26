@@ -319,7 +319,18 @@ class FollowUpService {
   }
 
   _normalizePhone(phone) {
-    return String(phone || '').replace(/\D/g, '');
+    if (!jid) return null;
+
+    // Remove @c.us or @lid
+    const cleaned = jid.split('@')[0];
+
+    // If it starts with 0 (Nigeria local format)
+    if (cleaned.startsWith('0')) {
+      return '234' + cleaned.substring(1);
+    }
+
+    return cleaned;
+    // return String(phone || '').replace(/\D/g, '');
   }
 
   _isOptOut(text) {
@@ -537,6 +548,8 @@ class FollowUpService {
     const cleanedPhone = this._normalizePhone(phone);
     const reply = this._normalizeInboundText(messageBody);
 
+    console.log(cleanedPhone,reply, 'normalize' )
+
     const memberByPhone = await MembersModel.findOne({
       phone: { $regex: cleanedPhone },
     });
@@ -633,8 +646,8 @@ class FollowUpService {
       else if (option === 2) action = await this._handleOption2(journey, firstName, cleanedPhone);
       else if (option === 3) action = await this._handleOption3(journey, firstName, cleanedPhone);
       else if (
-      journey.currentStage === 2 ||
-      member?.whatsappConversationStage === 'prayer_requested'
+        journey.currentStage === 2 ||
+        member?.whatsappConversationStage === 'prayer_requested'
       ) {
         await this._handlePrayerRequest(member, cleanedPhone, reply);
         action = 'prayer_submitted';
