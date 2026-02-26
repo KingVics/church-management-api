@@ -670,8 +670,9 @@ class FollowUpService {
           conversationStage: 'awaiting_reply'
         },
         {
-          $set: { conversationStage: 'completed' }
-        }
+          conversationStage: 'completed'
+        },
+        { new: true }
       );
 
       return result ? { action: result.action } : null;
@@ -760,15 +761,15 @@ class FollowUpService {
         member.whatsappEngagementStatus = 'active';
         await member.save();
       }
-
       await WhatsappActivity.findOneAndUpdate(
         {
           _id: lastOutbound._id,
           conversationStage: 'awaiting_reply'
         },
         {
-          $set: { conversationStage: 'completed' }
-        }
+          conversationStage: 'completed'
+        },
+        { new: true }
       );
       return { action, journey };
     }
