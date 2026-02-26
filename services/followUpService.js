@@ -587,10 +587,10 @@ class FollowUpService {
     const reply = this._normalizeInboundText(messageBody);
 
     const memberByPhone = await MembersModel.findOne({
-      phone: { $regex: cleanedPhone },
+      phone: cleanedPhone,
     });
 
-    console.log(`Member found by phone: ${memberByPhone}`);
+    console.log(`Member found by phone: ${memberByPhone?.whatsappOptIn}`);
 
     // // Global commands should work even when there is no active journey.
     if (this._isOptOut(reply) && memberByPhone) {
@@ -634,25 +634,59 @@ class FollowUpService {
       );
       return { action: 'help', journey: null };
     }
-    
 
-    const journey = await FollowUpJourney.findOne({
-      phone: { $regex: cleanedPhone },
-      status: { $in: ['active', 'escalated'] },
-    }).populate('memberId');
 
-    console.log(`Active journey found: ${!!journey}`);
-    if (!journey) {
-      if (memberByPhone) {
-        const absentHandled = await this._handleAbsentReminderReply(
-          memberByPhone,
-          cleanedPhone,
-          reply
-        );
-        if (absentHandled) return { action: absentHandled.action, journey: null };
-      }
+    // const journey = await FollowUpJourney.findOne({
+    //   phone: { $regex: cleanedPhone },
+    //   status: { $in: ['active', 'escalated'] },
+    // }).populate('memberId');
+
+    if (!memberByPhone) return null;
+
+    const lastOutbound = await WhatsappActivity.findOne({
+      memberId: memberByPhone._id,
+      direction: 'outbound',
+      conversationStage: 'awaiting_reply'
+    }).sort({ createdAt: -1 });
+
+    if (!lastOutbound) {
       return null;
     }
+
+    // Handle absent reminder outside journey
+    if (lastOutbound.messageType === 'absent_reminder') {
+      const result = await this._handleAbsentReminderReply(
+        memberByPhone,
+        cleanedPhone,
+        reply
+      );
+
+      lastOutbound.conversationStage = 'replied';
+      await lastOutbound.save();
+
+      return result ? { action: result.action } : null;
+    }
+
+    // console.log(`Active journey found: ${!!journey}`);
+    // if (!journey) {
+    //   if (memberByPhone) {
+    //     const absentHandled = await this._handleAbsentReminderReply(
+    //       memberByPhone,
+    //       cleanedPhone,
+    //       reply
+    //     );
+    //     if (absentHandled) return { action: absentHandled.action, journey: null };
+    //   }
+    //   return null;
+    // }
+
+    // For follow-up stages
+    const journey = await FollowUpJourney.findOne({
+      memberId: memberByPhone._id,
+      status: { $in: ['active', 'escalated'] }
+    }).populate('memberId');
+
+    if (!journey) return null;
 
     const member = journey.memberId;
     const firstName = member?.firstName || 'Friend';
