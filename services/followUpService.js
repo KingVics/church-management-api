@@ -233,7 +233,7 @@ class FollowUpService {
         direction: 'outbound',
         messageType: 'manual',
         content: responseMessage,
-        conversationStage: 'awaiting_reply',
+        conversationStage: 'none',
         status: sendResult.success ? 'sent' : 'failed',
         wahaMessageId: sendResult.data?.messageId || null,
         errorDetails: sendResult.success ? null : JSON.stringify(sendResult.error),
@@ -646,11 +646,11 @@ class FollowUpService {
     //   status: { $in: ['active', 'escalated'] },
     // }).populate('memberId');
 
-
     const lastOutbound = await WhatsappActivity.findOne({
       memberId: memberByPhone._id,
       direction: 'outbound',
-      conversationStage: 'awaiting_reply'
+      conversationStage: 'awaiting_reply',
+      messageType: { $in: ['absent_reminder', 'follow_up'] }
     }).sort({ createdAt: -1 });
 
     if (!lastOutbound) {
@@ -662,24 +662,24 @@ class FollowUpService {
     // Handle absent reminder outside journey
     if (lastOutbound.messageType === 'absent_reminder') {
 
-      return 
-      // const result = await this._handleAbsentReminderReply(
-      //   memberByPhone,
-      //   cleanedPhone,
-      //   reply
-      // );
 
-      // await WhatsappActivity.findOneAndUpdate(
-      //   {
-      //     _id: lastOutbound._id,
-      //     conversationStage: 'awaiting_reply'
-      //   },
-      //   {
-      //     $set: { conversationStage: 'completed' }
-      //   }
-      // );
+      const result = await this._handleAbsentReminderReply(
+        memberByPhone,
+        cleanedPhone,
+        reply
+      );
 
-      // return result ? { action: result.action } : null;
+      await WhatsappActivity.findOneAndUpdate(
+        {
+          _id: lastOutbound._id,
+          conversationStage: 'awaiting_reply'
+        },
+        {
+          $set: { conversationStage: 'completed' }
+        }
+      );
+
+      return result ? { action: result.action } : null;
     }
 
     // console.log(`Active journey found: ${!!journey}`);
@@ -695,76 +695,91 @@ class FollowUpService {
     //   return null;
     // }
 
-    // For follow-up stages
-    const journey = await FollowUpJourney.findOne({
-      memberId: memberByPhone._id,
-      status: { $in: ['active', 'escalated'] }
-    }).populate('memberId');
+    if (lastOutbound.messageType === 'follow_up' && lastOutbound.followUpStage !== undefined) {
 
-    if (!journey) return null;
+      // For follow-up stages
+      const journey = await FollowUpJourney.findOne({
+        memberId: memberByPhone._id,
+        status: { $in: ['active', 'escalated'] }
+      }).populate('memberId');
 
-    const member = journey.memberId;
-    const firstName = member?.firstName || 'Friend';
-    const flowStages = await this.getActiveFlowStages();
-    const stageConfig = this._findStageConfig(flowStages, journey.currentStage);
+      if (!journey) return null;
 
-    await WhatsappActivity.create({
-      memberId: member?._id,
-      phone: cleanedPhone,
-      direction: 'inbound',
-      messageType: 'reply',
-      content: reply,
-      followUpStage: journey.currentStage,
-      conversationStage: 'awaiting_reply',
-      status: 'read',
-    });
+      const member = journey.memberId;
+      const firstName = member?.firstName || 'Friend';
+      const flowStages = await this.getActiveFlowStages();
+      const stageConfig = this._findStageConfig(flowStages, journey.currentStage);
 
-    let action = 'unknown';
-    const configuredOption = this._findConfiguredResponseOption(
-      reply,
-      stageConfig?.responseOptions || []
-    );
-
-    if (configuredOption) {
-      action = await this._applyConfiguredResponseOption({
-        option: configuredOption,
-        journey,
-        member,
+      await WhatsappActivity.create({
+        memberId: member?._id,
         phone: cleanedPhone,
+        direction: 'inbound',
+        messageType: 'reply',
+        content: reply,
+        followUpStage: journey.currentStage,
+        conversationStage: 'awaiting_reply',
+        status: 'read',
       });
-    } else {
-      const option = this._detectOption(reply, journey.currentStage);
-      if (option === 1) action = await this._handleOption1(journey, firstName, cleanedPhone);
-      else if (option === 2) action = await this._handleOption2(journey, firstName, cleanedPhone);
-      else if (option === 3) action = await this._handleOption3(journey, firstName, cleanedPhone);
-      else if (
-        journey.currentStage === 2 ||
-        member?.whatsappConversationStage === 'prayer_requested'
-      ) {
-        await this._handlePrayerRequest(member, cleanedPhone, reply);
-        action = 'prayer_submitted';
+
+      let action = 'unknown';
+      const configuredOption = this._findConfiguredResponseOption(
+        reply,
+        stageConfig?.responseOptions || []
+      );
+
+      if (configuredOption) {
+        action = await this._applyConfiguredResponseOption({
+          option: configuredOption,
+          journey,
+          member,
+          phone: cleanedPhone,
+        });
       } else {
-        action = 'free_text';
+        const option = this._detectOption(reply, journey.currentStage);
+        if (option === 1) action = await this._handleOption1(journey, firstName, cleanedPhone);
+        else if (option === 2) action = await this._handleOption2(journey, firstName, cleanedPhone);
+        else if (option === 3) action = await this._handleOption3(journey, firstName, cleanedPhone);
+        else if (
+          journey.currentStage === 2 ||
+          member?.whatsappConversationStage === 'prayer_requested'
+        ) {
+          await this._handlePrayerRequest(member, cleanedPhone, reply);
+          action = 'prayer_submitted';
+        } else {
+          action = 'free_text';
+        }
       }
+
+      journey.replies.push({
+        content: reply,
+        receivedAt: new Date(),
+        stage: journey.currentStage,
+        action,
+      });
+      journey.engagementScore = this._calculateEngagement(journey);
+      await journey.save();
+
+      if (member) {
+        member.lastWhatsappReply = new Date();
+        member.totalReplies = (member.totalReplies || 0) + 1;
+        member.whatsappEngagementStatus = 'active';
+        await member.save();
+      }
+
+      await WhatsappActivity.findOneAndUpdate(
+        {
+          _id: lastOutbound._id,
+          conversationStage: 'awaiting_reply'
+        },
+        {
+          $set: { conversationStage: 'completed' }
+        }
+      );
+      return { action, journey };
     }
 
-    journey.replies.push({
-      content: reply,
-      receivedAt: new Date(),
-      stage: journey.currentStage,
-      action,
-    });
-    journey.engagementScore = this._calculateEngagement(journey);
-    await journey.save();
+    return null;
 
-    if (member) {
-      member.lastWhatsappReply = new Date();
-      member.totalReplies = (member.totalReplies || 0) + 1;
-      member.whatsappEngagementStatus = 'active';
-      await member.save();
-    }
-
-    return { action, journey };
   }
 
   async _handleOption1(journey, firstName, phone) {
