@@ -665,8 +665,15 @@ class FollowUpService {
         reply
       );
 
-      lastOutbound.conversationStage = 'replied';
-      await lastOutbound.save();
+      await WhatsappActivity.findOneAndUpdate(
+        {
+          _id: lastOutbound._id,
+          conversationStage: 'awaiting_reply'
+        },
+        {
+          $set: { conversationStage: 'completed' }
+        }
+      );
 
       return result ? { action: result.action } : null;
     }
