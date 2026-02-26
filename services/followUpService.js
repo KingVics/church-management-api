@@ -592,6 +592,11 @@ class FollowUpService {
 
     console.log(`Member found by phone: ${memberByPhone?.whatsappOptIn}`);
 
+    if (!memberByPhone) {
+      console.log('No member found for phone');
+      return null;
+    }
+
     // // Global commands should work even when there is no active journey.
     if (this._isOptOut(reply) && memberByPhone) {
       memberByPhone.whatsappOptIn = false;
@@ -641,7 +646,6 @@ class FollowUpService {
     //   status: { $in: ['active', 'escalated'] },
     // }).populate('memberId');
 
-    if (!memberByPhone) return null;
 
     const lastOutbound = await WhatsappActivity.findOne({
       memberId: memberByPhone._id,
