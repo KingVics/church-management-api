@@ -233,7 +233,7 @@ class FollowUpService {
         direction: 'outbound',
         messageType: 'manual',
         content: responseMessage,
-        conversationStage: 'none',
+        conversationStage: 'completed',
         status: sendResult.success ? 'sent' : 'failed',
         wahaMessageId: sendResult.data?.messageId || null,
         errorDetails: sendResult.success ? null : JSON.stringify(sendResult.error),
