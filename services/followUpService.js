@@ -580,7 +580,7 @@ class FollowUpService {
 
   async handleReply(phone, messageBody) {
     console.log(`Handling reply from ${phone}: ${messageBody}`);
-    const cleanedPhone = await _resolveRealPhoneFromJid(phone)
+    const cleanedPhone = await this._resolveRealPhoneFromJid(phone)
     console.log(`Cleaned phone: ${cleanedPhone}`);
     const reply = this._normalizeInboundText(messageBody);
 
