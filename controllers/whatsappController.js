@@ -241,17 +241,12 @@ const logoutSession = async (req, res) => {
 
 const handleWebhook = async (req, res) => {
   try {
-    console.log("[Webhook] Received payload:", JSON.stringify(req.body));
     const messages = extractWebhookMessages(req.body || {});
     const results = [];
 
-    console.log(messages, 'messages extracted from payload');
-    console.log(`[Webhook] Extracted ${messages.length} message(s) from payload.`);
 
     for (const msg of messages) {
       const result = await followUpService.handleReply(msg.from, msg.body);
-
-      console.log(result, 'result from handleReply');
       results.push({
         from: msg.from,
         action: result?.action || 'ignored',

@@ -583,17 +583,14 @@ class FollowUpService {
 
   async handleReply(phone, messageBody) {
     const cleanedPhone = await this._resolveRealPhoneFromJid(phone)
-    console.log(`Cleaned phone: ${cleanedPhone}`);
     const reply = this._normalizeInboundText(messageBody);
 
     const memberByPhone = await MembersModel.findOne({
       phone: cleanedPhone,
     });
 
-    console.log(`Member found by phone: ${memberByPhone?.whatsappOptIn}`);
 
     if (!memberByPhone) {
-      console.log('No member found for phone');
       return null;
     }
 
@@ -616,7 +613,6 @@ class FollowUpService {
       return { action: 'opted_out', journey: null };
     }
 
-    console.log(`Opt-out check done. Proceeding with reply handling.`);
 
     if (this._isOptIn(reply) && memberByPhone) {
       memberByPhone.whatsappOptIn = true;
@@ -630,7 +626,6 @@ class FollowUpService {
       );
       return { action: 'opted_in', journey: null };
     }
-    console.log(`Opt-in check done. Proceeding with help check.`);
 
     if (this._isHelp(reply)) {
       await wahaService.sendText(
