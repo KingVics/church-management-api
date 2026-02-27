@@ -298,8 +298,11 @@ class FollowUpService {
 
     if (option?.conversationStage) {
       member.whatsappConversationStage = option.conversationStage;
-      await member.save();
     }
+    member.lastWhatsappReply = new Date();
+    member.totalReplies = (member.totalReplies || 0) + 1;
+    member.whatsappEngagementStatus = 'active';
+    await member.save();
 
     return { action: `absent_${option.code}` };
   }
@@ -723,17 +726,34 @@ class FollowUpService {
     //   status: { $in: ['active', 'escalated'] },
     // }).populate('memberId');
 
-    const lastOutbound = await WhatsappActivity.findOne({
+    const outboundQuery = {
       memberId: memberByPhone._id,
       direction: 'outbound',
-      conversationStage: { $in: ['awaiting_reply', "welcome_sent"] },
-      messageType: { $in: ['absent_reminder', 'follow_up', 'welcome'] }
-    }).sort({ createdAt: -1 });
+      conversationStage: { $in: ['awaiting_reply', 'welcome_sent'] },
+      messageType: { $in: ['absent_reminder', 'follow_up', 'welcome'] },
+    };
+    if (memberByPhone.lastWhatsappReply) {
+      outboundQuery.createdAt = { $gt: memberByPhone.lastWhatsappReply };
+    }
+    const lastOutbound = await WhatsappActivity.findOne(outboundQuery).sort({
+      createdAt: -1,
+    });
 
 
     console.log(lastOutbound, 'last outbound activity awaiting reply');
 
     if (!lastOutbound) {
+      return null;
+    }
+
+    const alreadyReplied = await WhatsappActivity.findOne({
+      memberId: memberByPhone._id,
+      direction: 'inbound',
+      messageType: 'reply',
+      createdAt: { $gt: lastOutbound.createdAt },
+    }).sort({ createdAt: 1 });
+
+    if (alreadyReplied) {
       return null;
     }
 
