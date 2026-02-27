@@ -748,8 +748,7 @@ class FollowUpService {
 
       await WhatsappActivity.findOneAndUpdate(
         {
-          _id: lastOutbound._id,
-          conversationStage: 'awaiting_reply'
+          _id: lastOutbound._id
         },
         {
           conversationStage: 'completed'
@@ -844,8 +843,7 @@ class FollowUpService {
       }
       await WhatsappActivity.findOneAndUpdate(
         {
-          _id: lastOutbound._id,
-          conversationStage: 'awaiting_reply'
+          _id: lastOutbound._id
         },
         {
           conversationStage: 'completed'
