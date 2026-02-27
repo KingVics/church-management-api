@@ -645,7 +645,7 @@ class FollowUpService {
       memberId: memberByPhone._id,
       direction: 'outbound',
       conversationStage: 'awaiting_reply',
-      messageType: { $in: ['absent_reminder', 'follow_up'] }
+      messageType: { $in: ['absent_reminder', 'follow_up', 'welcome'] }
     }).sort({ createdAt: -1 });
 
     if (!lastOutbound) {
