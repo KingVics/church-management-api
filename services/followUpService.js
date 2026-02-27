@@ -17,17 +17,49 @@ class FollowUpService {
   }
 
   async ensureDefaultFlowConfig() {
-    const existing = await FollowUpFlowConfig.findOne({});
-    if (existing?._id) return existing;
-    return FollowUpFlowConfig.create({
-      name: 'Default Follow-up Flow',
-      isActive: true,
-      stages: this._defaultFlowStages(),
-    });
+    const [followDefault, absentDefault] = await Promise.all([
+      FollowUpFlowConfig.findOne({
+        configType: 'follow_up',
+        isDefault: true,
+      }).sort({ updatedAt: -1 }),
+      FollowUpFlowConfig.findOne({
+        configType: 'absent_reminder',
+        isDefault: true,
+      }).sort({ updatedAt: -1 }),
+    ]);
+
+    let ensuredFollow = followDefault;
+    let ensuredAbsent = absentDefault;
+
+    if (!ensuredFollow) {
+      ensuredFollow = await FollowUpFlowConfig.create({
+        configType: 'follow_up',
+        name: 'Default Follow-up Flow',
+        isDefault: true,
+        isActive: true,
+        stages: this._defaultFlowStages(),
+      });
+    }
+
+    if (!ensuredAbsent) {
+      ensuredAbsent = await FollowUpFlowConfig.create({
+        configType: 'absent_reminder',
+        name: 'Default Absent Reminder',
+        isDefault: true,
+        isActive: true,
+        absentReminder: this._defaultAbsentReminderConfig(),
+      });
+    }
+
+    return { followUp: ensuredFollow, absentReminder: ensuredAbsent };
   }
 
   async getActiveFlowStages() {
-    const config = await FollowUpFlowConfig.findOne({ isActive: true }).sort({
+    const config = await FollowUpFlowConfig.findOne({
+      configType: 'follow_up',
+      isDefault: true,
+      isActive: true,
+    }).sort({
       updatedAt: -1,
     });
     if (config?.stages?.length) return config.stages;
@@ -35,7 +67,30 @@ class FollowUpService {
   }
 
   async _getActiveFlowConfig() {
-    return FollowUpFlowConfig.findOne({ isActive: true }).sort({
+    return FollowUpFlowConfig.findOne({
+      configType: 'follow_up',
+      isDefault: true,
+      isActive: true,
+    }).sort({
+      updatedAt: -1,
+    });
+  }
+
+  async _getFlowConfigById(configId) {
+    if (!configId) return null;
+    return FollowUpFlowConfig.findOne({
+      _id: configId,
+      configType: 'follow_up',
+      isActive: true,
+    });
+  }
+
+  async _getDefaultAbsentReminderConfig() {
+    return FollowUpFlowConfig.findOne({
+      configType: 'absent_reminder',
+      isDefault: true,
+      isActive: true,
+    }).sort({
       updatedAt: -1,
     });
   }
@@ -211,8 +266,9 @@ class FollowUpService {
       status: 'read',
     });
 
-    const flowConfig = await this._getActiveFlowConfig();
-    const absentConfig = flowConfig?.absentReminder || this._defaultAbsentReminderConfig();
+    const absentTemplate = await this._getDefaultAbsentReminderConfig();
+    const absentConfig =
+      absentTemplate?.absentReminder || this._defaultAbsentReminderConfig();
     if (!absentConfig?.enabled) return { action: 'absent_reply_ignored' };
 
     const option = this._findConfiguredResponseOption(
@@ -273,8 +329,9 @@ class FollowUpService {
       };
     }
 
-    const flowConfig = await this._getActiveFlowConfig();
-    const absentConfig = flowConfig?.absentReminder || this._defaultAbsentReminderConfig();
+    const absentTemplate = await this._getDefaultAbsentReminderConfig();
+    const absentConfig =
+      absentTemplate?.absentReminder || this._defaultAbsentReminderConfig();
     const option = this._findConfiguredResponseOption(
       reply,
       absentConfig.responseOptions || []
@@ -330,7 +387,7 @@ class FollowUpService {
 
     // If already normal phone
     if (id.startsWith('234') && id.length === 13) {
-      return id.slice(3);
+      return `0${id.slice(3)}`;
     }
 
     if (id.startsWith('0') && id.length === 11) {
@@ -428,7 +485,10 @@ class FollowUpService {
   async startJourney(member) {
     try {
       await this.ensureDefaultFlowConfig();
-      const flowStages = this._orderedStages(await this.getActiveFlowStages());
+      const activeConfig = await this._getActiveFlowConfig();
+      const flowStages = this._orderedStages(
+        activeConfig?.stages?.length ? activeConfig.stages : this._defaultFlowStages()
+      );
 
       const existing = await FollowUpJourney.findOne({ memberId: member._id });
       if (existing) {
@@ -494,6 +554,7 @@ class FollowUpService {
       return FollowUpJourney.create({
         memberId: member._id,
         phone: member.phone,
+        flowConfigId: activeConfig?._id || null,
         currentStage: startStage,
         status: 'active',
         messagesSent: [{ stage: startStage, sentAt: new Date(), messageType: 'welcome' }],
@@ -524,7 +585,15 @@ class FollowUpService {
 
   async _sendNextStageMessage(journey) {
     const member = journey.memberId;
-    const flowStages = this._orderedStages(await this.getActiveFlowStages());
+    let flowStages = null;
+    if (journey.flowConfigId) {
+      const config = await this._getFlowConfigById(journey.flowConfigId);
+      flowStages = config?.stages || null;
+    }
+    if (!flowStages || flowStages.length === 0) {
+      flowStages = await this.getActiveFlowStages();
+    }
+    flowStages = this._orderedStages(flowStages);
     const nextStage = this._nextStage(journey.currentStage, flowStages);
     if (!nextStage) {
       journey.status = 'completed';
@@ -595,8 +664,10 @@ class FollowUpService {
         phone: cleanedPhone,
       });
 
-      memberByPhone.whatsapplid = phone;
-      await memberByPhone.save();
+      if (memberByPhone) {
+        memberByPhone.whatsapplid = phone;
+        await memberByPhone.save();
+      }
     }
 
     console.log('Resolved member for phone:', 'is:', memberByPhone.phone, memberByPhone?.firstName);
@@ -702,7 +773,11 @@ class FollowUpService {
     //   return null;
     // }
 
-    if (lastOutbound.messageType === 'follow_up' && lastOutbound.followUpStage !== undefined) {
+    if (
+      (lastOutbound.messageType === 'follow_up' ||
+        lastOutbound.messageType === 'welcome') &&
+      lastOutbound.followUpStage !== undefined
+    ) {
 
       // For follow-up stages
       const journey = await FollowUpJourney.findOne({
@@ -714,7 +789,14 @@ class FollowUpService {
 
       const member = journey.memberId;
       const firstName = member?.firstName || 'Friend';
-      const flowStages = await this.getActiveFlowStages();
+      let flowStages = null;
+      if (journey.flowConfigId) {
+        const config = await this._getFlowConfigById(journey.flowConfigId);
+        flowStages = config?.stages || null;
+      }
+      if (!flowStages || flowStages.length === 0) {
+        flowStages = await this.getActiveFlowStages();
+      }
       const stageConfig = this._findStageConfig(flowStages, journey.currentStage);
 
       await WhatsappActivity.create({

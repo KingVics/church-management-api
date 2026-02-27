@@ -878,10 +878,10 @@ router.patch('/journeys/stop-active', auth, stopActiveJourneys);
  *     - bearerAuth: []
  *     tags:
  *     - WhatsApp
- *     summary: Get active follow-up flow config
+ *     summary: Get follow-up and absent reminder templates
  *     responses:
  *      200:
- *        description: Follow-up flow config
+ *        description: Follow-up and absent reminder templates with defaults
  */
 router.get('/flow', auth, getFollowUpFlow);
 
@@ -893,7 +893,8 @@ router.get('/flow', auth, getFollowUpFlow);
  *     - bearerAuth: []
  *     tags:
  *     - WhatsApp
- *     summary: Update follow-up flow config (templates and schedule)
+ *     summary: Create/update follow-up or absent reminder template
+ *     description: Use configType "follow_up" with stages, or "absent_reminder" with absentReminder. Provide templateId to update an existing template.
  *     requestBody:
  *      required: true
  *      content:
@@ -901,8 +902,19 @@ router.get('/flow', auth, getFollowUpFlow);
  *          schema:
  *            type: object
  *            required:
- *              - stages
+ *              - configType
  *            properties:
+ *              configType:
+ *                type: string
+ *                enum: [follow_up, absent_reminder]
+ *              templateId:
+ *                type: string
+ *                description: Existing template ID to update
+ *              isDefault:
+ *                type: boolean
+ *                description: If true, sets this template as the default for its configType
+ *              isActive:
+ *                type: boolean
  *              name:
  *                type: string
  *              stages:
@@ -982,6 +994,8 @@ router.get('/flow', auth, getFollowUpFlow);
  *                        nextStageOverride:
  *                          type: number
  *          example:
+ *            configType: follow_up
+ *            isDefault: true
  *            name: Visitor Follow-up Flow Extended
  *            stages:
  *              - stage: 0
@@ -1042,26 +1056,9 @@ router.get('/flow', auth, getFollowUpFlow);
  *                delayToNextDays: null
  *                sendHour: 10
  *                sendMinute: 0
- *            absentReminder:
- *              enabled: true
- *              messageTemplate: "Hi {{firstName}}, we missed you {{weekText}}. Is everything okay? Reply 1 - I am fine, 2 - I need prayer, 3 - Please call me."
- *              responseOptions:
- *                - code: "1"
- *                  matches: ["fine", "i am fine", "back soon"]
- *                  responseMessage: "Thanks {{firstName}}. We are glad to hear from you."
- *                - code: "2"
- *                  matches: ["prayer", "support"]
- *                  responseMessage: "Thank you for sharing. Our team will pray with you."
- *                  conversationStage: "prayer_requested"
- *                - code: "3"
- *                  matches: ["call", "please call me"]
- *                  responseMessage: "A team member will call you shortly."
- *                  conversationStage: "escalated_to_human"
- *                  journeyStatus: "escalated"
- *                  escalationNotes: "Absent reminder reply requested a call."
  *     responses:
  *      200:
- *        description: Follow-up flow updated
+ *        description: Template saved
  */
 router.put('/flow', auth, updateFollowUpFlow);
 

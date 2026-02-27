@@ -109,27 +109,32 @@ const normalizeWebhookMessage = (msg = {}) => {
 
 
 const extractWebhookMessages = (body = {}) => {
-  if (body?.event !== 'message') return [];
+  const event = body?.event || body?.type || '';
+  const payload = body?.payload ?? body?.data ?? body;
 
-  const payload = body.payload;
-  if (!payload) return [];
+  if (String(event).startsWith('message.ack')) return [];
 
-  // Ignore messages sent by the bot
-  if (payload.fromMe) return [];
+  const candidates = [];
+  if (Array.isArray(payload?.messages)) candidates.push(...payload.messages);
+  if (Array.isArray(payload)) candidates.push(...payload);
+  if (payload?.message) candidates.push(payload.message);
+  if (payload) candidates.push(payload);
+  if (body?.message) candidates.push(body.message);
+  if (body && body !== payload) candidates.push(body);
 
-  // Ignore group messages
-  if (payload.from?.endsWith('@g.us')) return [];
+  const unique = new Set();
+  const normalized = [];
+  for (const candidate of candidates) {
+    const msg = normalizeWebhookMessage(candidate);
+    const key = `${msg.from}|${msg.body}|${msg.fromMe}`;
+    if (!msg.from || !msg.body || msg.fromMe) continue;
+    if (String(msg.from).endsWith('@g.us')) continue;
+    if (unique.has(key)) continue;
+    unique.add(key);
+    normalized.push(msg);
+  }
 
-  // Ignore empty/system messages
-  if (!payload.body || payload.body.trim() === '') return [];
-
-  return [
-    {
-      from: payload.from,
-      body: payload.body.trim(),
-      fromMe: false,
-    },
-  ];
+  return normalized;
 };
 const startSession = async (req, res) => {
   try {
@@ -1018,20 +1023,184 @@ const defaultAbsentReminderConfig = () => ({
   ],
 });
 
+const validateStagesInput = (stages) => {
+  if (!Array.isArray(stages)) return { error: 'stages array is required' };
+  if (stages.length === 0) return { error: 'stages array cannot be empty' };
+
+  const seenStages = new Set();
+  const seenKeys = new Set();
+  let enabledCount = 0;
+
+  for (const stage of stages) {
+    if (!Number.isInteger(stage.stage) || stage.stage < 0) {
+      return { error: `Invalid stage: ${stage.stage}` };
+    }
+    if (seenStages.has(stage.stage)) {
+      return { error: `Duplicate stage detected: ${stage.stage}` };
+    }
+    seenStages.add(stage.stage);
+
+    if (typeof stage.key !== 'string' || !stage.key.trim()) {
+      return { error: `Stage ${stage.stage} key is required` };
+    }
+    if (seenKeys.has(stage.key)) {
+      return { error: `Duplicate key detected: ${stage.key}` };
+    }
+    seenKeys.add(stage.key);
+
+    if (typeof stage.enabled !== 'boolean') {
+      return { error: `Stage ${stage.stage} enabled must be boolean` };
+    }
+    if (stage.enabled) enabledCount++;
+
+    if (typeof stage.sendHour !== 'number' || stage.sendHour < 0 || stage.sendHour > 23) {
+      return { error: `Stage ${stage.stage} sendHour must be between 0 and 23` };
+    }
+
+    if (
+      typeof stage.sendMinute !== 'number' ||
+      stage.sendMinute < 0 ||
+      stage.sendMinute > 59
+    ) {
+      return { error: `Stage ${stage.stage} sendMinute must be between 0 and 59` };
+    }
+
+    if (
+      stage.delayToNextDays !== null &&
+      (typeof stage.delayToNextDays !== 'number' || stage.delayToNextDays < 0)
+    ) {
+      return { error: `Stage ${stage.stage} delayToNextDays must be null or >= 0` };
+    }
+
+    if (stage.responseOptions !== undefined) {
+      if (!Array.isArray(stage.responseOptions)) {
+        return { error: `Stage ${stage.stage} responseOptions must be an array` };
+      }
+
+      const seenOptionCodes = new Set();
+      for (const option of stage.responseOptions) {
+        if (typeof option.code !== 'string' || !option.code.trim()) {
+          return { error: `Stage ${stage.stage} responseOptions[].code is required` };
+        }
+        if (seenOptionCodes.has(option.code)) {
+          return {
+            error: `Stage ${stage.stage} has duplicate response option code: ${option.code}`,
+          };
+        }
+        seenOptionCodes.add(option.code);
+
+        if (option.matches !== undefined && !Array.isArray(option.matches)) {
+          return { error: `Stage ${stage.stage} responseOptions[].matches must be an array` };
+        }
+
+        if (
+          option.journeyStatus !== undefined &&
+          option.journeyStatus !== null &&
+          !['active', 'completed', 'paused', 'escalated', 'opted_out'].includes(
+            option.journeyStatus
+          )
+        ) {
+          return { error: `Stage ${stage.stage} responseOptions[].journeyStatus is invalid` };
+        }
+
+        if (
+          option.nextStageOverride !== undefined &&
+          option.nextStageOverride !== null &&
+          (!Number.isInteger(option.nextStageOverride) || option.nextStageOverride < 0)
+        ) {
+          return {
+            error:
+              `Stage ${stage.stage} responseOptions[].nextStageOverride must be null or a non-negative integer`,
+          };
+        }
+      }
+    }
+  }
+
+  if (enabledCount === 0) {
+    return { error: 'At least one stage must be enabled' };
+  }
+
+  return { stages: [...stages].sort((a, b) => a.stage - b.stage) };
+};
+
+const validateAbsentReminderInput = (absentReminder) => {
+  if (typeof absentReminder !== 'object' || absentReminder === null) {
+    return { error: 'absentReminder must be an object' };
+  }
+
+  if (
+    absentReminder.enabled !== undefined &&
+    typeof absentReminder.enabled !== 'boolean'
+  ) {
+    return { error: 'absentReminder.enabled must be boolean' };
+  }
+
+  if (
+    absentReminder.messageTemplate !== undefined &&
+    typeof absentReminder.messageTemplate !== 'string'
+  ) {
+    return { error: 'absentReminder.messageTemplate must be string' };
+  }
+
+  if (
+    absentReminder.responseOptions !== undefined &&
+    !Array.isArray(absentReminder.responseOptions)
+  ) {
+    return { error: 'absentReminder.responseOptions must be an array' };
+  }
+
+  if (Array.isArray(absentReminder.responseOptions)) {
+    const seenCodes = new Set();
+    for (const option of absentReminder.responseOptions) {
+      if (typeof option.code !== 'string' || !option.code.trim()) {
+        return { error: 'absentReminder.responseOptions[].code is required' };
+      }
+      if (seenCodes.has(option.code)) {
+        return { error: `Duplicate absent reminder response option code: ${option.code}` };
+      }
+      seenCodes.add(option.code);
+
+      if (option.matches !== undefined && !Array.isArray(option.matches)) {
+        return { error: 'absentReminder.responseOptions[].matches must be an array' };
+      }
+    }
+  }
+
+  return { absentReminder };
+};
+
+const unsetDefaultForType = async (configType, exceptId = null) => {
+  const query = { configType, isDefault: true };
+  if (exceptId) query._id = { $ne: exceptId };
+  await FollowUpFlowConfig.updateMany(query, { $set: { isDefault: false } });
+};
+
 const getFollowUpFlow = async (req, res) => {
   try {
-    let config = await FollowUpFlowConfig.findOne({ isActive: true }).sort({
-      updatedAt: -1,
+    await followUpService.ensureDefaultFlowConfig();
+
+    const [followUpTemplates, absentReminderTemplates] = await Promise.all([
+      FollowUpFlowConfig.find({ configType: 'follow_up' }).sort({
+        isDefault: -1,
+        updatedAt: -1,
+      }),
+      FollowUpFlowConfig.find({ configType: 'absent_reminder' }).sort({
+        isDefault: -1,
+        updatedAt: -1,
+      }),
+    ]);
+
+    return res.status(200).json({
+      followUpTemplates,
+      absentReminderTemplates,
+      defaults: {
+        followUpTemplateId:
+          followUpTemplates.find((t) => t.isDefault)?._id || null,
+        absentReminderTemplateId:
+          absentReminderTemplates.find((t) => t.isDefault)?._id || null,
+      },
     });
-    if (!config) {
-      config = await FollowUpFlowConfig.create({
-        name: 'Default Follow-up Flow',
-        isActive: true,
-        stages: defaultFlowStages(),
-        absentReminder: defaultAbsentReminderConfig(),
-      });
-    }
-    return res.status(200).json(config);
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }
@@ -1039,218 +1208,161 @@ const getFollowUpFlow = async (req, res) => {
 
 const updateFollowUpFlow = async (req, res) => {
   try {
-    const { name, stages, absentReminder } = req.body?.schedule || {};
-    if (!Array.isArray(stages)) {
-      return res.status(400).json({ error: 'stages array is required' });
+    await followUpService.ensureDefaultFlowConfig();
+    const payload = req.body?.schedule || req.body || {};
+    const actorId = req.user?.userId || null;
+
+    const isLegacyCombinedUpdate =
+      payload.configType === undefined &&
+      Array.isArray(payload.stages) &&
+      payload.absentReminder !== undefined;
+
+    if (isLegacyCombinedUpdate) {
+      const stageValidation = validateStagesInput(payload.stages);
+      if (stageValidation.error) {
+        return res.status(400).json({ error: stageValidation.error });
+      }
+
+      const absentValidation = validateAbsentReminderInput(payload.absentReminder);
+      if (absentValidation.error) {
+        return res.status(400).json({ error: absentValidation.error });
+      }
+
+      let followTemplate =
+        (await FollowUpFlowConfig.findOne({
+          configType: 'follow_up',
+          isDefault: true,
+        }).sort({ updatedAt: -1 })) ||
+        new FollowUpFlowConfig({ configType: 'follow_up' });
+
+      followTemplate.name = payload.name || followTemplate.name || 'Default Follow-up Flow';
+      followTemplate.isActive = true;
+      followTemplate.isDefault = true;
+      followTemplate.stages = stageValidation.stages;
+      followTemplate.absentReminder = null;
+      followTemplate.updatedBy = actorId;
+      await unsetDefaultForType('follow_up', followTemplate._id);
+      await followTemplate.save();
+
+      let absentTemplate =
+        (await FollowUpFlowConfig.findOne({
+          configType: 'absent_reminder',
+          isDefault: true,
+        }).sort({ updatedAt: -1 })) ||
+        new FollowUpFlowConfig({ configType: 'absent_reminder' });
+
+      absentTemplate.name = payload.absentReminderName || 'Default Absent Reminder';
+      absentTemplate.isActive = true;
+      absentTemplate.isDefault = true;
+      absentTemplate.stages = [];
+      absentTemplate.absentReminder = absentValidation.absentReminder;
+      absentTemplate.updatedBy = actorId;
+      await unsetDefaultForType('absent_reminder', absentTemplate._id);
+      await absentTemplate.save();
+
+      return res.status(200).json({
+        message: 'Follow-up and absent reminder defaults updated',
+        followUpTemplate: followTemplate,
+        absentReminderTemplate: absentTemplate,
+      });
     }
-    if (stages.length === 0) {
-      return res.status(400).json({ error: 'stages array cannot be empty' });
+
+    const configType =
+      payload.configType ||
+      (payload.absentReminder !== undefined ? 'absent_reminder' : 'follow_up');
+
+    if (!['follow_up', 'absent_reminder'].includes(configType)) {
+      return res.status(400).json({
+        error: 'configType must be follow_up or absent_reminder',
+      });
     }
 
-    const seenStages = new Set();
-    const seenKeys = new Set();
-    let enabledCount = 0;
+    const templateId = payload.templateId || payload.id || null;
+    const requestedDefault =
+      payload.isDefault !== undefined ? Boolean(payload.isDefault) : undefined;
 
-    for (const stage of stages) {
-      if (!Number.isInteger(stage.stage) || stage.stage < 0) {
-        return res.status(400).json({ error: `Invalid stage: ${stage.stage}` });
+    let config = null;
+    const isUpdate = Boolean(templateId);
+    if (templateId) {
+      config = await FollowUpFlowConfig.findOne({
+        _id: templateId,
+        configType,
+      });
+      if (!config) {
+        return res.status(404).json({ error: 'Template not found for configType' });
       }
-      if (seenStages.has(stage.stage)) {
-        return res
-          .status(400)
-          .json({ error: `Duplicate stage detected: ${stage.stage}` });
-      }
-      seenStages.add(stage.stage);
+    } else {
+      config = new FollowUpFlowConfig({ configType });
+    }
 
-      if (typeof stage.key !== 'string' || !stage.key.trim()) {
-        return res.status(400).json({
-          error: `Stage ${stage.stage} key is required`,
-        });
-      }
-      if (seenKeys.has(stage.key)) {
-        return res
-          .status(400)
-          .json({ error: `Duplicate key detected: ${stage.key}` });
-      }
-      seenKeys.add(stage.key);
+    config.name =
+      payload.name ||
+      config.name ||
+      (configType === 'follow_up'
+        ? 'Follow-up Flow Template'
+        : 'Absent Reminder Template');
+    if (payload.isActive !== undefined) {
+      config.isActive = !!payload.isActive;
+    } else if (!isUpdate) {
+      config.isActive = true;
+    }
+    config.updatedBy = actorId;
 
-      if (typeof stage.enabled !== 'boolean') {
-        return res
-          .status(400)
-          .json({ error: `Stage ${stage.stage} enabled must be boolean` });
-      }
-      if (stage.enabled) enabledCount++;
-
-      if (typeof stage.sendHour !== 'number' || stage.sendHour < 0 || stage.sendHour > 23) {
-        return res.status(400).json({
-          error: `Stage ${stage.stage} sendHour must be between 0 and 23`,
-        });
-      }
-
-      if (
-        typeof stage.sendMinute !== 'number' ||
-        stage.sendMinute < 0 ||
-        stage.sendMinute > 59
-      ) {
-        return res.status(400).json({
-          error: `Stage ${stage.stage} sendMinute must be between 0 and 59`,
-        });
-      }
-
-      if (
-        stage.delayToNextDays !== null &&
-        (typeof stage.delayToNextDays !== 'number' || stage.delayToNextDays < 0)
-      ) {
-        return res.status(400).json({
-          error: `Stage ${stage.stage} delayToNextDays must be null or >= 0`,
-        });
-      }
-
-      if (stage.responseOptions !== undefined) {
-        if (!Array.isArray(stage.responseOptions)) {
-          return res.status(400).json({
-            error: `Stage ${stage.stage} responseOptions must be an array`,
-          });
+    if (configType === 'follow_up') {
+      if (payload.stages !== undefined) {
+        const stageValidation = validateStagesInput(payload.stages);
+        if (stageValidation.error) {
+          return res.status(400).json({ error: stageValidation.error });
         }
-
-        const seenOptionCodes = new Set();
-        for (const option of stage.responseOptions) {
-          if (typeof option.code !== 'string' || !option.code.trim()) {
-            return res.status(400).json({
-              error: `Stage ${stage.stage} responseOptions[].code is required`,
-            });
-          }
-          if (seenOptionCodes.has(option.code)) {
-            return res.status(400).json({
-              error: `Stage ${stage.stage} has duplicate response option code: ${option.code}`,
-            });
-          }
-          seenOptionCodes.add(option.code);
-
-          if (option.matches !== undefined && !Array.isArray(option.matches)) {
-            return res.status(400).json({
-              error: `Stage ${stage.stage} responseOptions[].matches must be an array`,
-            });
-          }
-
-          if (
-            option.journeyStatus !== undefined &&
-            option.journeyStatus !== null &&
-            !['active', 'completed', 'paused', 'escalated', 'opted_out'].includes(
-              option.journeyStatus
-            )
-          ) {
-            return res.status(400).json({
-              error: `Stage ${stage.stage} responseOptions[].journeyStatus is invalid`,
-            });
-          }
-
-          if (
-            option.nextStageOverride !== undefined &&
-            option.nextStageOverride !== null &&
-            (!Number.isInteger(option.nextStageOverride) ||
-              option.nextStageOverride < 0)
-          ) {
-            return res.status(400).json({
-              error: `Stage ${stage.stage} responseOptions[].nextStageOverride must be null or a non-negative integer`,
-            });
-          }
+        config.stages = stageValidation.stages;
+      } else if (!isUpdate) {
+        return res.status(400).json({ error: 'stages array is required' });
+      }
+      config.absentReminder = null;
+    } else {
+      const absentReminder = payload.absentReminder || payload.template;
+      if (absentReminder !== undefined) {
+        const absentValidation = validateAbsentReminderInput(absentReminder);
+        if (absentValidation.error) {
+          return res.status(400).json({ error: absentValidation.error });
         }
+        config.absentReminder = absentValidation.absentReminder;
+      } else if (!isUpdate) {
+        return res.status(400).json({ error: 'absentReminder is required' });
       }
-    }
-    if (enabledCount === 0) {
-      return res
-        .status(400)
-        .json({ error: 'At least one stage must be enabled' });
-    }
-
-    if (absentReminder !== undefined) {
-      if (typeof absentReminder !== 'object' || absentReminder === null) {
-        return res.status(400).json({
-          error: 'absentReminder must be an object',
-        });
-      }
-
-      if (
-        absentReminder.enabled !== undefined &&
-        typeof absentReminder.enabled !== 'boolean'
-      ) {
-        return res.status(400).json({
-          error: 'absentReminder.enabled must be boolean',
-        });
-      }
-
-      if (
-        absentReminder.messageTemplate !== undefined &&
-        typeof absentReminder.messageTemplate !== 'string'
-      ) {
-        return res.status(400).json({
-          error: 'absentReminder.messageTemplate must be string',
-        });
-      }
-
-      if (
-        absentReminder.responseOptions !== undefined &&
-        !Array.isArray(absentReminder.responseOptions)
-      ) {
-        return res.status(400).json({
-          error: 'absentReminder.responseOptions must be an array',
-        });
-      }
-
-      if (Array.isArray(absentReminder.responseOptions)) {
-        const seenCodes = new Set();
-        for (const option of absentReminder.responseOptions) {
-          if (typeof option.code !== 'string' || !option.code.trim()) {
-            return res.status(400).json({
-              error: 'absentReminder.responseOptions[].code is required',
-            });
-          }
-          if (seenCodes.has(option.code)) {
-            return res.status(400).json({
-              error: `Duplicate absent reminder response option code: ${option.code}`,
-            });
-          }
-          seenCodes.add(option.code);
-
-          if (option.matches !== undefined && !Array.isArray(option.matches)) {
-            return res.status(400).json({
-              error: 'absentReminder.responseOptions[].matches must be an array',
-            });
-          }
-        }
-      }
+      config.stages = [];
     }
 
-    const sanitizedStages = [...stages].sort((a, b) => a.stage - b.stage);
-
-    let config = await FollowUpFlowConfig.findOne({ isActive: true }).sort({
-      updatedAt: -1,
+    const existingDefault = await FollowUpFlowConfig.findOne({
+      configType,
+      isDefault: true,
     });
 
-    if (!config) {
-      config = await FollowUpFlowConfig.create({
-        name: name || 'Default Follow-up Flow',
-        isActive: true,
-        stages: sanitizedStages,
-        absentReminder:
-          absentReminder !== undefined
-            ? absentReminder
-            : defaultAbsentReminderConfig(),
-        updatedBy: req.user?.userId || null,
-      });
-    } else {
-      config.name = name || config.name;
-      config.stages = sanitizedStages;
-      if (absentReminder !== undefined) {
-        config.absentReminder = absentReminder;
+    const shouldBeDefault =
+      requestedDefault !== undefined
+        ? requestedDefault
+        : !existingDefault || String(existingDefault._id) === String(config._id);
+
+    if (requestedDefault === false && existingDefault) {
+      if (String(existingDefault._id) === String(config._id)) {
+        return res.status(400).json({
+          error:
+            'Each configType must have a default. Set another template as default before unsetting this one.',
+        });
       }
-      config.updatedBy = req.user?.userId || null;
-      await config.save();
     }
 
+    if (shouldBeDefault) {
+      await unsetDefaultForType(configType, config._id);
+      config.isDefault = true;
+    } else {
+      config.isDefault = false;
+    }
+
+    await config.save();
+
     return res.status(200).json({
-      message: 'Follow-up flow updated',
+      message: 'Template saved',
       config,
     });
   } catch (error) {
@@ -1260,30 +1372,41 @@ const updateFollowUpFlow = async (req, res) => {
 
 const resetFollowUpFlow = async (req, res) => {
   try {
-    const stages = defaultFlowStages();
-    const absentReminder = defaultAbsentReminderConfig();
-    let config = await FollowUpFlowConfig.findOne({ isActive: true }).sort({
-      updatedAt: -1,
-    });
+    await followUpService.ensureDefaultFlowConfig();
+    const actorId = req.user?.userId || null;
 
-    if (!config) {
-      config = await FollowUpFlowConfig.create({
-        name: 'Default Follow-up Flow',
-        isActive: true,
-        stages,
-        absentReminder,
-        updatedBy: req.user?.userId || null,
-      });
-    } else {
-      config.stages = stages;
-      config.absentReminder = absentReminder;
-      config.updatedBy = req.user?.userId || null;
-      await config.save();
-    }
+    let followTemplate =
+      (await FollowUpFlowConfig.findOne({
+        configType: 'follow_up',
+        isDefault: true,
+      }).sort({ updatedAt: -1 })) ||
+      new FollowUpFlowConfig({ configType: 'follow_up' });
+    followTemplate.name = 'Default Follow-up Flow';
+    followTemplate.isActive = true;
+    followTemplate.isDefault = true;
+    followTemplate.stages = defaultFlowStages();
+    followTemplate.updatedBy = actorId;
+    await unsetDefaultForType('follow_up', followTemplate._id);
+    await followTemplate.save();
+
+    let absentTemplate =
+      (await FollowUpFlowConfig.findOne({
+        configType: 'absent_reminder',
+        isDefault: true,
+      }).sort({ updatedAt: -1 })) ||
+      new FollowUpFlowConfig({ configType: 'absent_reminder' });
+    absentTemplate.name = 'Default Absent Reminder';
+    absentTemplate.isActive = true;
+    absentTemplate.isDefault = true;
+    absentTemplate.absentReminder = defaultAbsentReminderConfig();
+    absentTemplate.updatedBy = actorId;
+    await unsetDefaultForType('absent_reminder', absentTemplate._id);
+    await absentTemplate.save();
 
     return res.status(200).json({
-      message: 'Follow-up flow reset to defaults',
-      config,
+      message: 'Follow-up templates reset to defaults',
+      followUpTemplate: followTemplate,
+      absentReminderTemplate: absentTemplate,
     });
   } catch (error) {
     return res.status(500).json({ error: error.message });

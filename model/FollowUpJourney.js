@@ -12,6 +12,11 @@ const followUpJourneySchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    flowConfigId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'FollowUpFlowConfig',
+      default: null,
+    },
     currentStage: {
       type: Number,
       default: 0,

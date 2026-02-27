@@ -6,9 +6,11 @@ const FollowUpFlowConfig = require('../model/FollowUpFlowConfig');
 
 class BroadcastService {
   async _getAbsentReminderConfig() {
-    const config = await FollowUpFlowConfig.findOne({ isActive: true }).sort({
-      updatedAt: -1,
-    });
+    const config = await FollowUpFlowConfig.findOne({
+      configType: 'absent_reminder',
+      isDefault: true,
+      isActive: true,
+    }).sort({ updatedAt: -1 });
     return config?.absentReminder || null;
   }
 

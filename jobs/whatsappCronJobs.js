@@ -6,6 +6,7 @@ const registerWhatsAppCronJobs = () => {
     '0 * * * *',
     async () => {
       try {
+        await followUpService.ensureDefaultFlowConfig();
         await followUpService.processScheduledMessages();
       } catch (error) {
         console.error('[Cron] Follow-up processing error:', error.message);

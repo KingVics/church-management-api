@@ -92,9 +92,23 @@ const absentReminderSchema = new mongoose.Schema(
 
 const followUpFlowConfigSchema = new mongoose.Schema(
   {
+    configType: {
+      type: String,
+      enum: ['follow_up', 'absent_reminder'],
+      default: 'follow_up',
+      required: true,
+    },
     name: {
       type: String,
-      default: 'Default Follow-up Flow',
+      default: function () {
+        return this.configType === 'absent_reminder'
+          ? 'Default Absent Reminder'
+          : 'Default Follow-up Flow';
+      },
+    },
+    isDefault: {
+      type: Boolean,
+      default: false,
     },
     isActive: {
       type: Boolean,
@@ -105,6 +119,9 @@ const followUpFlowConfigSchema = new mongoose.Schema(
       default: [],
       validate: {
         validator: function (stages) {
+          if (this.configType === 'absent_reminder') {
+            return !Array.isArray(stages) || stages.length === 0;
+          }
           if (!Array.isArray(stages) || stages.length === 0) return false;
 
           const seenStages = new Set();
@@ -155,11 +172,17 @@ const followUpFlowConfigSchema = new mongoose.Schema(
     },
     absentReminder: {
       type: absentReminderSchema,
-      default: () => ({
-        enabled: true,
-        messageTemplate: '',
-        responseOptions: [],
-      }),
+      default: null,
+      validate: {
+        validator: function (value) {
+          if (this.configType === 'absent_reminder') {
+            return value && typeof value === 'object';
+          }
+          return value === null || value === undefined;
+        },
+        message:
+          'absentReminder must be provided for absent_reminder configs and omitted for follow_up configs.',
+      },
     },
     updatedBy: {
       type: mongoose.Schema.Types.ObjectId,
@@ -171,6 +194,29 @@ const followUpFlowConfigSchema = new mongoose.Schema(
 );
 
 followUpFlowConfigSchema.index({ isActive: 1 });
+followUpFlowConfigSchema.index(
+  { configType: 1, isDefault: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { isDefault: true },
+  }
+);
+
+followUpFlowConfigSchema.pre('validate', function (next) {
+  if (this.configType === 'follow_up') {
+    this.absentReminder = null;
+  } else if (this.configType === 'absent_reminder') {
+    this.stages = [];
+    if (!this.absentReminder) {
+      this.absentReminder = {
+        enabled: true,
+        messageTemplate: '',
+        responseOptions: [],
+      };
+    }
+  }
+  next();
+});
 
 followUpFlowConfigSchema.pre('save', function (next) {
   if (Array.isArray(this.stages)) {
