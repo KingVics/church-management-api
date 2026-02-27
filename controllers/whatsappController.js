@@ -243,7 +243,7 @@ const handleWebhook = async (req, res) => {
   try {
     const messages = extractWebhookMessages(req.body || {});
     const results = [];
-
+    console.log('Received webhook with messages:', messages);
 
     for (const msg of messages) {
       const result = await followUpService.handleReply(msg.from, msg.body);
@@ -981,7 +981,7 @@ const getSessionState = async (req, res) => {
 };
 
 const defaultFlowStages = () => [
-  { stage: 0, key: 'welcome', enabled: true, message: '', delayToNextDays: 2, sendHour: 10, sendMinute: 0,  },
+  { stage: 0, key: 'welcome', enabled: true, message: '', delayToNextDays: 2, sendHour: 10, sendMinute: 0, },
   { stage: 2, key: 'day2', enabled: true, message: '', delayToNextDays: 2, sendHour: 10, sendMinute: 0 },
   { stage: 4, key: 'day4', enabled: true, message: '', delayToNextDays: 3, sendHour: 10, sendMinute: 0 },
   { stage: 7, key: 'day7', enabled: true, message: '', delayToNextDays: null, sendHour: 10, sendMinute: 0 },

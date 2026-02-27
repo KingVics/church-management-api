@@ -582,6 +582,7 @@ class FollowUpService {
   }
 
   async handleReply(phone, messageBody) {
+    console.log('Handling reply from phone:', phone, 'with message:', messageBody);
     const cleanedPhone = await this._resolveRealPhoneFromJid(phone)
     const reply = this._normalizeInboundText(messageBody);
 
@@ -589,6 +590,7 @@ class FollowUpService {
       phone: cleanedPhone,
     });
 
+    console.log('Resolved member for phone:', cleanedPhone, 'is:', memberByPhone?.firstName);
 
     if (!memberByPhone) {
       return null;
@@ -648,11 +650,13 @@ class FollowUpService {
       messageType: { $in: ['absent_reminder', 'follow_up', 'welcome'] }
     }).sort({ createdAt: -1 });
 
+
+    console.log(lastOutbound, 'last outbound activity awaiting reply');
+
     if (!lastOutbound) {
       return null;
     }
 
-    console.log(lastOutbound, 'last outbound activity awaiting reply');
 
     // Handle absent reminder outside journey
     if (lastOutbound.messageType === 'absent_reminder') {
