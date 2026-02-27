@@ -824,19 +824,7 @@ class FollowUpService {
           phone: memberByPhone.phone,
         });
       } else {
-        const option = this._detectOption(reply, journey.currentStage);
-        if (option === 1) action = await this._handleOption1(journey, firstName, memberByPhone.phone);
-        else if (option === 2) action = await this._handleOption2(journey, firstName, memberByPhone.phone);
-        else if (option === 3) action = await this._handleOption3(journey, firstName, memberByPhone.phone);
-        else if (
-          journey.currentStage === 2 ||
-          member?.whatsappConversationStage === 'prayer_requested'
-        ) {
-          await this._handlePrayerRequest(member, memberByPhone.phone, reply);
-          action = 'prayer_submitted';
-        } else {
-          action = 'free_text';
-        }
+        action = 'unmapped_reply';
       }
 
       journey.replies.push({
