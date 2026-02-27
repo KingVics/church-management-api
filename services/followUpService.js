@@ -590,7 +590,7 @@ class FollowUpService {
     });
 
     if (!memberByPhone) {
-      const cleanedPhone = await this._resolveRealPhoneFromJid(phone)
+      let cleanedPhone = await this._resolveRealPhoneFromJid(phone)
       memberByPhone = await MembersModel.findOne({
         phone: cleanedPhone,
       });
@@ -599,7 +599,7 @@ class FollowUpService {
       await memberByPhone.save();
     }
 
-    console.log('Resolved member for phone:', cleanedPhone, 'is:', memberByPhone?.firstName);
+    console.log('Resolved member for phone:', 'is:', memberByPhone.phone, memberByPhone?.firstName);
 
     if (!memberByPhone) {
       return null;
@@ -617,7 +617,7 @@ class FollowUpService {
       );
 
       await wahaService.sendText(
-        cleanedPhone,
+        memberByPhone.phone,
         'You have been unsubscribed from WhatsApp follow-up messages. Reply START to opt in again.'
       );
 
@@ -632,7 +632,7 @@ class FollowUpService {
       await memberByPhone.save();
 
       await wahaService.sendText(
-        cleanedPhone,
+        memberByPhone.phone,
         'You are now subscribed again. Thank you.'
       );
       return { action: 'opted_in', journey: null };
@@ -640,7 +640,7 @@ class FollowUpService {
 
     if (this._isHelp(reply)) {
       await wahaService.sendText(
-        cleanedPhone,
+        memberByPhone.phone,
         'Reply 1, 2, or 3 to choose an option. Reply STOP to opt out, START to opt in.'
       );
       return { action: 'help', journey: null };
@@ -671,7 +671,7 @@ class FollowUpService {
     if (lastOutbound.messageType === 'absent_reminder') {
       const result = await this._handleAbsentReminderReply(
         memberByPhone,
-        cleanedPhone,
+        memberByPhone.phone,
         reply
       );
 
@@ -719,7 +719,7 @@ class FollowUpService {
 
       await WhatsappActivity.create({
         memberId: member?._id,
-        phone: cleanedPhone,
+        phone: memberByPhone.phone,
         direction: 'inbound',
         messageType: 'reply',
         content: reply,
@@ -739,18 +739,18 @@ class FollowUpService {
           option: configuredOption,
           journey,
           member,
-          phone: cleanedPhone,
+          phone: memberByPhone.phone,
         });
       } else {
         const option = this._detectOption(reply, journey.currentStage);
-        if (option === 1) action = await this._handleOption1(journey, firstName, cleanedPhone);
-        else if (option === 2) action = await this._handleOption2(journey, firstName, cleanedPhone);
-        else if (option === 3) action = await this._handleOption3(journey, firstName, cleanedPhone);
+        if (option === 1) action = await this._handleOption1(journey, firstName, memberByPhone.phone);
+        else if (option === 2) action = await this._handleOption2(journey, firstName, memberByPhone.phone);
+        else if (option === 3) action = await this._handleOption3(journey, firstName, memberByPhone.phone);
         else if (
           journey.currentStage === 2 ||
           member?.whatsappConversationStage === 'prayer_requested'
         ) {
-          await this._handlePrayerRequest(member, cleanedPhone, reply);
+          await this._handlePrayerRequest(member, memberByPhone.phone, reply);
           action = 'prayer_submitted';
         } else {
           action = 'free_text';
