@@ -19,6 +19,10 @@ const memberWhatsAppFields = {
     type: Date,
     default: null,
   },
+  whatsapplid:{
+    type: String,
+    default: null,
+  },
   whatsappConversationStage: {
     type: String,
     enum: [

@@ -583,12 +583,21 @@ class FollowUpService {
 
   async handleReply(phone, messageBody) {
     console.log('Handling reply from phone:', phone, 'with message:', messageBody);
-    const cleanedPhone = await this._resolveRealPhoneFromJid(phone)
     const reply = this._normalizeInboundText(messageBody);
 
-    const memberByPhone = await MembersModel.findOne({
-      phone: cleanedPhone,
+    let memberByPhone = await MembersModel.findOne({
+      whatsapplid: phone,
     });
+
+    if (!memberByPhone) {
+      const cleanedPhone = await this._resolveRealPhoneFromJid(phone)
+      memberByPhone = await MembersModel.findOne({
+        phone: cleanedPhone,
+      });
+
+      memberByPhone.whatsapplid = phone;
+      await memberByPhone.save();
+    }
 
     console.log('Resolved member for phone:', cleanedPhone, 'is:', memberByPhone?.firstName);
 
@@ -646,7 +655,7 @@ class FollowUpService {
     const lastOutbound = await WhatsappActivity.findOne({
       memberId: memberByPhone._id,
       direction: 'outbound',
-      conversationStage: 'awaiting_reply',
+      conversationStage: { $in: ['awaiting_reply', "welcome_sent"] },
       messageType: { $in: ['absent_reminder', 'follow_up', 'welcome'] }
     }).sort({ createdAt: -1 });
 
