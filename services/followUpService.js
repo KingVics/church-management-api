@@ -656,8 +656,6 @@ class FollowUpService {
 
     // Handle absent reminder outside journey
     if (lastOutbound.messageType === 'absent_reminder') {
-
-
       const result = await this._handleAbsentReminderReply(
         memberByPhone,
         cleanedPhone,
