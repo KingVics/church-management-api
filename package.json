@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "nodemon index.js"
+    "start": "nodemon index.js",
+    "prod": "vaultsync run --label Church-backend --env Production -- node index.js"
   },
   "keywords": [],
   "author": "",
