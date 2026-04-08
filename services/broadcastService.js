@@ -5,6 +5,33 @@ const WhatsappActivity = require('../model/WhatsappActivity');
 const FollowUpFlowConfig = require('../model/FollowUpFlowConfig');
 
 class BroadcastService {
+  _normalizePhone(phone) {
+    return String(phone || '').replace(/[^\d]/g, '');
+  }
+
+  _buildRecipients({ members = [], recipients = [], requireOptIn = true }) {
+    const explicitRecipients = Array.isArray(recipients) ? recipients : [];
+    const memberRecipients = Array.isArray(members)
+      ? members.map((member) => ({
+          memberId: member?._id || null,
+          phone: member?.phone || '',
+          whatsappOptIn: member?.whatsappOptIn,
+        }))
+      : [];
+
+    const dedupe = new Set();
+    const source = explicitRecipients.length > 0 ? explicitRecipients : memberRecipients;
+
+    return source.filter((recipient) => {
+      const normalizedPhone = this._normalizePhone(recipient?.phone);
+      if (!normalizedPhone) return false;
+      if (requireOptIn && !recipient?.whatsappOptIn) return false;
+      if (dedupe.has(normalizedPhone)) return false;
+      dedupe.add(normalizedPhone);
+      return true;
+    });
+  }
+
   async _getAbsentReminderConfig() {
     const config = await FollowUpFlowConfig.findOne({
       configType: 'absent_reminder',
@@ -29,16 +56,24 @@ class BroadcastService {
     type,
     content,
     members,
+    recipients,
     sentBy,
     audience = 'all_opted_in',
     departmentId = null,
+    requireOptIn = true,
   }) {
-    const eligibleMembers = members.filter((m) => m.whatsappOptIn && m.phone);
+    const eligibleRecipients = this._buildRecipients({
+      members,
+      recipients,
+      requireOptIn,
+    });
 
-    if (eligibleMembers.length === 0) {
+    if (eligibleRecipients.length === 0) {
       return {
         success: false,
-        message: 'No eligible members found (none opted in or no phone numbers)',
+        message: requireOptIn
+          ? 'No eligible recipients found (none opted in or no phone numbers)'
+          : 'No valid recipient phone numbers found',
       };
     }
 
@@ -48,34 +83,34 @@ class BroadcastService {
       content,
       audience,
       departmentId,
-      totalRecipients: eligibleMembers.length,
-      recipients: eligibleMembers.map((m) => ({
-        memberId: m._id,
-        phone: m.phone,
+      totalRecipients: eligibleRecipients.length,
+      recipients: eligibleRecipients.map((recipient) => ({
+        memberId: recipient.memberId || null,
+        phone: recipient.phone,
         status: 'queued',
       })),
       status: 'in_progress',
     });
 
-    this._processBroadcastQueue(broadcast, eligibleMembers, content);
+    this._processBroadcastQueue(broadcast, eligibleRecipients, content);
 
     return {
       success: true,
       broadcastId: broadcast._id,
-      totalRecipients: eligibleMembers.length,
-      message: `Broadcast started. Sending to ${eligibleMembers.length} members.`,
+      totalRecipients: eligibleRecipients.length,
+      message: `Broadcast started. Sending to ${eligibleRecipients.length} recipients.`,
     };
   }
 
-  async _processBroadcastQueue(broadcast, members, content) {
+  async _processBroadcastQueue(broadcast, recipients, content) {
     let successCount = 0;
     let failCount = 0;
 
-    for (let i = 0; i < members.length; i++) {
-      const member = members[i];
+    for (let i = 0; i < recipients.length; i++) {
+      const recipient = recipients[i];
 
       try {
-        const result = await wahaService.sendText(member.phone, content);
+        const result = await wahaService.sendText(recipient.phone, content);
 
         broadcast.recipients[i].status = result.success ? 'sent' : 'failed';
         broadcast.recipients[i].sentAt = new Date();
@@ -85,8 +120,8 @@ class BroadcastService {
         }
 
         await WhatsappActivity.create({
-          memberId: member._id,
-          phone: member.phone,
+          memberId: recipient.memberId || null,
+          phone: recipient.phone,
           direction: 'outbound',
           messageType: 'broadcast',
           content,
@@ -237,6 +272,18 @@ class BroadcastService {
       members,
       sentBy,
       audience: 'custom_list',
+    });
+  }
+
+  sendCustomRecipients(recipients, message, sentBy, options = {}) {
+    return this.sendBroadcast({
+      type: 'custom',
+      content: message,
+      recipients,
+      sentBy,
+      audience: options.audience || 'custom_list',
+      departmentId: options.departmentId || null,
+      requireOptIn: false,
     });
   }
 

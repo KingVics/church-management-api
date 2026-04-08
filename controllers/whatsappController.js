@@ -78,6 +78,23 @@ const normalizeWebhookMessage = (msg = {}) => {
   return { from, body: String(body || '').trim(), fromMe };
 };
 
+const normalizePhoneDigits = (phone) => String(phone || '').replace(/[^\d]/g, '');
+
+const buildPhoneVariants = (phone) => {
+  const digits = normalizePhoneDigits(phone);
+  if (!digits) return [];
+
+  const variants = new Set([digits]);
+  if (digits.startsWith('234') && digits.length > 10) {
+    variants.add(`0${digits.slice(3)}`);
+  }
+  if (digits.startsWith('0') && digits.length === 11) {
+    variants.add(`234${digits.slice(1)}`);
+  }
+
+  return Array.from(variants);
+};
+
 // const extractWebhookMessages = (body = {}) => {
 //   const event = body?.event || body?.type || '';
 //   const payload = body?.payload ?? body?.data ?? body;
@@ -451,13 +468,38 @@ const sendEmergencyBroadcast = async (req, res) => {
 
 const sendCustomBroadcast = async (req, res) => {
   try {
-    const { message, memberIds, departmentId } = req.body;
+    const {
+      message,
+      memberIds,
+      departmentId,
+      phoneNumbers,
+      phones,
+      selectedPhones,
+    } = req.body;
     if (!message) {
       return res.status(400).json({ error: 'message is required' });
     }
 
+    const selectedPhoneNumbers = [
+      ...(Array.isArray(phoneNumbers) ? phoneNumbers : []),
+      ...(Array.isArray(phones) ? phones : []),
+      ...(Array.isArray(selectedPhones) ? selectedPhones : []),
+    ];
+
+    const recipients = [];
+    const seenPhones = new Set();
+    const addRecipient = (recipient) => {
+      const normalizedPhone = normalizePhoneDigits(recipient?.phone);
+      if (!normalizedPhone || seenPhones.has(normalizedPhone)) return;
+      seenPhones.add(normalizedPhone);
+      recipients.push({
+        memberId: recipient?.memberId || null,
+        phone: recipient.phone,
+        whatsappOptIn: recipient?.whatsappOptIn,
+      });
+    };
+
     const query = {
-      whatsappOptIn: true,
       phone: { $exists: true, $ne: '' },
     };
     if (Array.isArray(memberIds) && memberIds.length > 0) {
@@ -467,11 +509,71 @@ const sendCustomBroadcast = async (req, res) => {
       query.departments = { $elemMatch: { deptId: departmentId } };
     }
 
-    const members = await MembersModel.find(query);
-    const result = await broadcastService.sendToGroup(
-      members,
+    const shouldLoadMembers = Boolean(query._id || query.departments);
+    if (shouldLoadMembers) {
+      const members = await MembersModel.find(query).select(
+        '_id phone whatsappOptIn'
+      );
+      members.forEach((member) =>
+        addRecipient({
+          memberId: member._id,
+          phone: member.phone,
+          whatsappOptIn: member.whatsappOptIn,
+        })
+      );
+    }
+
+    if (selectedPhoneNumbers.length > 0) {
+      const validPhoneNumbers = selectedPhoneNumbers
+        .map((phone) => String(phone || '').trim())
+        .filter(Boolean);
+
+      const phoneVariants = validPhoneNumbers.flatMap((phone) =>
+        buildPhoneVariants(phone)
+      );
+
+      const matchedMembers =
+        phoneVariants.length > 0
+          ? await MembersModel.find({
+              phone: { $in: Array.from(new Set(phoneVariants)) },
+            }).select('_id phone whatsappOptIn')
+          : [];
+
+      const memberByPhone = new Map();
+      matchedMembers.forEach((member) => {
+        buildPhoneVariants(member.phone).forEach((variant) => {
+          memberByPhone.set(variant, member);
+        });
+      });
+
+      validPhoneNumbers.forEach((phone) => {
+        const matchingMember = buildPhoneVariants(phone)
+          .map((variant) => memberByPhone.get(variant))
+          .find(Boolean);
+
+        addRecipient({
+          memberId: matchingMember?._id || null,
+          phone: matchingMember?.phone || phone,
+          whatsappOptIn: matchingMember?.whatsappOptIn,
+        });
+      });
+    }
+
+    if (recipients.length === 0) {
+      return res.status(400).json({
+        error:
+          'Provide at least one valid recipient using memberIds, departmentId, phoneNumbers, phones, or selectedPhones',
+      });
+    }
+
+    const result = await broadcastService.sendCustomRecipients(
+      recipients,
       message,
-      req.user.userId
+      req.user.userId,
+      {
+        audience: departmentId ? 'department' : 'custom_list',
+        departmentId: departmentId || null,
+      }
     );
     if (result?.success === false && result?.error) {
       return res

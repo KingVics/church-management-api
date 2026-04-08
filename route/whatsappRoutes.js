@@ -512,8 +512,25 @@ router.post('/broadcast/emergency', auth, sendEmergencyBroadcast);
  *                type: array
  *                items:
  *                  type: string
+ *                description: Explicitly selected members to receive the message, even if opted out
  *              departmentId:
  *                type: string
+ *                description: Optional department filter for selected members
+ *              phoneNumbers:
+ *                type: array
+ *                items:
+ *                  type: string
+ *                description: Explicit phone numbers selected in the frontend, regardless of opt-in state
+ *              phones:
+ *                type: array
+ *                items:
+ *                  type: string
+ *                description: Alias for phoneNumbers
+ *              selectedPhones:
+ *                type: array
+ *                items:
+ *                  type: string
+ *                description: Alias for phoneNumbers
  *     responses:
  *      200:
  *        description: Broadcast queued
